@@ -23,6 +23,19 @@ from database import (
 import pandas as pd
 from telegram import InputFile
 
+from functools import wraps
+
+def restricted(func):
+    @wraps(func)
+    async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
+        user_id = update.effective_user.id
+        if user_id != ADMIN_ID and not is_registered(user_id):
+            await update.message.reply_text("❌ You must register first using /register.")
+            return
+        return await func(update, context, *args, **kwargs)
+    return wrapped
+
+
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
@@ -104,6 +117,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ➡️ Admin: Approve User
+@restricted
 async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized.")
@@ -123,6 +137,7 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ➡️ Admin: Reject User
+@restricted
 async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized.")
@@ -140,6 +155,7 @@ async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ➡️ Admin: List Pending Users
+@restricted
 async def pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized.")
@@ -157,6 +173,7 @@ async def pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 # ➡️ Admin: remove current Users    
+@restricted
 async def remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized.")
@@ -175,6 +192,7 @@ async def remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ➡️ Admin: View all currently registered/pending users in excel
 
 # helper functions
+@restricted
 def export_registered_to_excel(filename="registered_users.xlsx"):
     users = get_registered_users()  # [(user_id, name, block, room)]
 
@@ -189,6 +207,7 @@ def export_registered_to_excel(filename="registered_users.xlsx"):
     print(f"Registered users saved to {filename}")
     return True
 
+@restricted
 def export_pending_to_excel(filename="pending_users.xlsx"):
     pending_users = get_pending_users()  # [(user_id, name, block, room), ...]
 
@@ -205,6 +224,7 @@ def export_pending_to_excel(filename="pending_users.xlsx"):
     return True
 
 # "/export"
+@restricted
 async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized.")
@@ -222,6 +242,7 @@ async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_document(chat_id=update.effective_user.id, document=InputFile(file, filename))
 
 # "/export_pending"
+@restricted
 async def export_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized.")
@@ -239,6 +260,7 @@ async def export_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_document(chat_id=update.effective_user.id, document=InputFile(file, filename))
 
 # "/help"
+@restricted
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
@@ -266,6 +288,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
 # "/food" !!! need to update proper food options !!!!
+@restricted
 async def food(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🍜 Supper Spots Nearby", callback_data="supper_nearby")],
@@ -277,6 +300,7 @@ async def food(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("🍽 What are you looking for?", reply_markup=reply_markup)
 
+@restricted
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -290,6 +314,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "grab_options":
         await query.edit_message_text("🍔 Popular GrabFood Picks:\n- McDonald's Jurong West\n- KFC Pioneer\n- Mr Bean NTU")
 
+@restricted
 # /groups
 async def groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = (
