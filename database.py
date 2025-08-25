@@ -5,17 +5,16 @@ def init_db():
     conn = sqlite3.connect("hall5.db")
     cursor = conn.cursor()
     
-    # Users table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
         block TEXT NOT NULL,
-        room TEXT NOT NULL
+        room TEXT NOT NULL,
+        approved INTEGER DEFAULT 0
         )
     """)
 
-    # Pending users table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS pending_users (
         user_id INTEGER PRIMARY KEY,
@@ -50,13 +49,11 @@ def approve_user(user_id):
     conn = sqlite3.connect("hall5.db")
     cursor = conn.cursor()
     
-    # Get name, block, and room from pending_users
     cursor.execute("SELECT name, block, room FROM pending_users WHERE user_id = ?", (user_id,))
     user = cursor.fetchone()
     
     if user:
-        # Insert into users table with block and room
-        cursor.execute("INSERT INTO users (user_id, name, block, room) VALUES (?, ?, ?, ?)", (user_id, user[0], user[1], user[2]))
+        cursor.execute("INSERT INTO users (user_id, name, block, room, approved) VALUES (?, ?, ?, ?, 1)", (user_id, user[0], user[1], user[2]))
         cursor.execute("DELETE FROM pending_users WHERE user_id = ?", (user_id,))
     
     conn.commit()
@@ -73,12 +70,11 @@ def reject_user(user_id):
 
 # Check if user is registered
 def is_registered(user_id):
-    conn = sqlite3.connect("hall5.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
-    result = cursor.fetchone()
-    conn.close()
-    return result is not None
+    with sqlite3.connect("hall5.db") as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT approved FROM users WHERE user_id = ?", (user_id,))
+        result = cursor.fetchone()
+    return result is not None and result[0]
 
 # remove users accidentally added to system
 def remove_user(user_id):

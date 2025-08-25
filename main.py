@@ -1,4 +1,4 @@
-from telegram import Update, InputFile, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InputFile, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -21,16 +21,23 @@ from database import (
     get_registered_users
 )
 import pandas as pd
-from telegram import InputFile
-
 from functools import wraps
+import sqlite3
 
 def restricted(func):
     @wraps(func)
     async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         user_id = update.effective_user.id
+        with sqlite3.connect("hall5.db") as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM pending_users WHERE user_id = ?", (user_id,))
+            is_pending = cursor.fetchone() is not None
+        print(f"User {user_id} - Admin={ADMIN_ID}, Registered={is_registered(user_id)}, Pending={is_pending}")
         if user_id != ADMIN_ID and not is_registered(user_id):
-            await update.message.reply_text("❌ You must register first using /register.")
+            if is_pending:
+                await update.message.reply_text("❌ Your registration is pending approval. Please wait.")
+            else:
+                await update.message.reply_text("❌ You must register first using /register.")
             return
         return await func(update, context, *args, **kwargs)
     return wrapped
@@ -43,6 +50,24 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 1779704544
 
 init_db()
+
+async def set_bot_commands(application):
+    commands = [
+        BotCommand("start", "Welcome message"),
+        BotCommand("register", "Register yourself in the bot"),
+        BotCommand("cancel", "Cancel registration"),
+        BotCommand("help", "List all available commands"),
+        BotCommand("food", "Find supper and food options"),
+        BotCommand("groups", "View Hall 5 group links"),
+        BotCommand("pending", "Admin: View pending registrations"),
+        BotCommand("approve", "Admin: Approve a pending user"),
+        BotCommand("reject", "Admin: Reject a pending user"),
+        BotCommand("remove", "Admin: Remove a registered user"),
+        BotCommand("export", "Admin: Export registered users"),
+        BotCommand("export_pending", "Admin: Export pending users")
+    ]
+    await application.bot.set_my_commands(commands)
+
 
 ASK_NAME, ASK_BLOCK, ASK_ROOM = range(3)
 
@@ -193,7 +218,7 @@ async def remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # helper functions
 @restricted
-def export_registered_to_excel(filename="registered_users.xlsx"):
+async def export_registered_to_excel(filename="registered_users.xlsx"):
     users = get_registered_users()  # [(user_id, name, block, room)]
 
     if not users:
@@ -208,7 +233,7 @@ def export_registered_to_excel(filename="registered_users.xlsx"):
     return True
 
 @restricted
-def export_pending_to_excel(filename="pending_users.xlsx"):
+async def export_pending_to_excel(filename="pending_users.xlsx"):
     pending_users = get_pending_users()  # [(user_id, name, block, room), ...]
 
     if not pending_users:
@@ -339,6 +364,8 @@ async def groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.post_init = set_bot_commands
 
     # Commands
     app.add_handler(CommandHandler("start", start))
