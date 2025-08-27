@@ -24,6 +24,7 @@ import pandas as pd
 from functools import wraps
 import sqlite3
 
+# ---------------- Restriction Decorator ----------------
 def restricted(func):
     @wraps(func)
     async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
@@ -32,25 +33,26 @@ def restricted(func):
             cursor = conn.cursor()
             cursor.execute("SELECT 1 FROM pending_users WHERE user_id = ?", (user_id,))
             is_pending = cursor.fetchone() is not None
-        print(f"User {user_id} - Admin={ADMIN_ID}, Registered={is_registered(user_id)}, Pending={is_pending}")
+        print(f"[LOG] User {user_id} - Admin={ADMIN_ID}, Registered={is_registered(user_id)}, Pending={is_pending}")
+
         if user_id != ADMIN_ID and not is_registered(user_id):
-            if is_pending:
-                await update.message.reply_text("❌ Your registration is pending approval. Please wait.")
-            else:
-                await update.message.reply_text("❌ You must register first using /register.")
+            if update.message:
+                if is_pending:
+                    await update.message.reply_text("❌ Your registration is pending approval. Please wait.")
+                else:
+                    await update.message.reply_text("❌ You must register first using /register.")
             return
         return await func(update, context, *args, **kwargs)
     return wrapped
 
-
+# ---------------- Load environment ----------------
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-# ✅ Replace this with your Telegram user ID (check BotFather / userinfobot)
 ADMIN_ID = 1779704544
 
 init_db()
 
+# ---------------- Bot Commands ----------------
 async def set_bot_commands(application):
     commands = [
         BotCommand("start", "Welcome message"),
@@ -68,11 +70,9 @@ async def set_bot_commands(application):
     ]
     await application.bot.set_my_commands(commands)
 
-
 ASK_NAME, ASK_BLOCK, ASK_ROOM = range(3)
 
-
-# ➡️ Start Command
+# ---------------- User Commands ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "*WASSUP FIVERS !! 🎉*\n"
@@ -81,38 +81,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-
-# ➡️ Register Start
 async def start_registration(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if is_registered(user_id):
         await update.message.reply_text("✅ You are already registered.")
         return ConversationHandler.END
-
     await update.message.reply_text("👋 Hi! What’s your full name?")
     return ASK_NAME
 
-# ➡️ Ask for Block
 async def ask_block(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["name"] = update.message.text
-
     reply_keyboard = [["Purple", "Orange"], ["Green", "Blue"]]
     markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True, resize_keyboard=True)
-
-    await update.message.reply_text(
-        "🏢 Which block are you from? Please select one:",
-        reply_markup=markup
-    )
+    await update.message.reply_text("🏢 Which block are you from? Please select one:", reply_markup=markup)
     return ASK_BLOCK
 
-# ➡️ Ask for Room
 async def ask_room(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["block"] = update.message.text  # Corrected to save 'block'
-    await update.message.reply_text("🏠 What’s your room number?")
+    context.user_data["block"] = update.message.text
+    await update.message.reply_text("🏠 What’s your room number? (e.g. 28-04-543)")
     return ASK_ROOM
 
-
-# ➡️ Save Pending User & Notify Admin
 async def save_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = context.user_data["name"]
     block = context.user_data["block"]
@@ -120,10 +108,7 @@ async def save_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     add_pending_user(user_id, name, block, room)
-
     await update.message.reply_text("✅ Registration request sent! Await admin approval.")
-
-    # Notify admin
     await context.bot.send_message(
         chat_id=ADMIN_ID,
         text=(
@@ -133,163 +118,113 @@ async def save_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ),
         parse_mode="Markdown"
     )
-
     return ConversationHandler.END
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Registration cancelled.")
     return ConversationHandler.END
 
-
-# ➡️ Admin: Approve User
+# ---------------- Admin Commands ----------------
 @restricted
 async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized.")
         return
-
     try:
         user_id = int(context.args[0])
     except (IndexError, ValueError):
         await update.message.reply_text("⚠️ Usage: /approve <user_id>")
         return
-
     if approve_user(user_id):
         await update.message.reply_text(f"✅ Approved user {user_id}.")
         await context.bot.send_message(chat_id=user_id, text="✅ You are now registered!")
     else:
         await update.message.reply_text("❌ User not found in pending list.")
 
-
-# ➡️ Admin: Reject User
 @restricted
 async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized.")
         return
-
     try:
         user_id = int(context.args[0])
     except (IndexError, ValueError):
         await update.message.reply_text("⚠️ Usage: /reject <user_id>")
         return
-
     reject_user(user_id)
     await update.message.reply_text(f"❌ Rejected user {user_id}.")
     await context.bot.send_message(chat_id=user_id, text="❌ Your registration was rejected.")
 
-
-# ➡️ Admin: List Pending Users
 @restricted
 async def pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized.")
         return
-
     pending_users = get_pending_users()
     if not pending_users:
         await update.message.reply_text("✅ No pending users.")
         return
-
     msg = "*Pending Registrations:*\n"
     for user in pending_users:
-        msg += f"- {user[1]}, Room {user[2]} (ID: `{user[0]}`)\n"
-
+        msg += f"- {user[1]}, Room {user[3]} (ID: `{user[0]}`)\n"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
-# ➡️ Admin: remove current Users    
 @restricted
 async def remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("❌ You are not authorized.")
         return
-
     try:
         user_id = int(context.args[0])
     except (IndexError, ValueError):
         await update.message.reply_text("⚠️ Usage: /remove <user_id>")
         return
-
     remove_user(user_id)
     await update.message.reply_text(f"🗑️ Removed user {user_id}.")
     await context.bot.send_message(chat_id=user_id, text="⚠️ You have been removed from the bot. Please contact the admin.")
 
-# ➡️ Admin: View all currently registered/pending users in excel
-
-# helper functions
 @restricted
 async def export_registered_to_excel(filename="registered_users.xlsx"):
-    users = get_registered_users()  # [(user_id, name, block, room)]
-
+    users = get_registered_users()
     if not users:
-        print("No registered users found.")
         return False
-
-    # Create a DataFrame with Block as a separate column
     df = pd.DataFrame(users, columns=["User ID", "Name", "Block", "Room"])
-
     df.to_excel(filename, index=False)
-    print(f"Registered users saved to {filename}")
     return True
 
 @restricted
 async def export_pending_to_excel(filename="pending_users.xlsx"):
-    pending_users = get_pending_users()  # [(user_id, name, block, room), ...]
-
-    if not pending_users:
-        print("No pending users found.")
+    users = get_pending_users()
+    if not users:
         return False
-
-    # Create a pandas DataFrame
-    df = pd.DataFrame(pending_users, columns=["User ID", "Name", "Block", "Room"])
-
-    # Export to Excel
+    df = pd.DataFrame(users, columns=["User ID", "Name", "Block", "Room"])
     df.to_excel(filename, index=False)
-    print(f"Pending users saved to {filename}")
     return True
 
-# "/export"
 @restricted
 async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("❌ You are not authorized.")
-        return
-
     filename = "registered_users.xlsx"
-    success = export_registered_to_excel(filename)
-
+    success = await export_registered_to_excel(filename)
     if not success:
         await update.message.reply_text("⚠️ No registered users found to export.")
         return
-
-    # Send the Excel file to the admin
     with open(filename, "rb") as file:
         await context.bot.send_document(chat_id=update.effective_user.id, document=InputFile(file, filename))
 
-# "/export_pending"
 @restricted
 async def export_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
-        await update.message.reply_text("❌ You are not authorized.")
-        return
-
     filename = "pending_users.xlsx"
-    success = export_pending_to_excel(filename)
-
+    success = await export_pending_to_excel(filename)
     if not success:
         await update.message.reply_text("⚠️ No pending users found to export.")
         return
-
-    # Send the Excel file to the admin
     with open(filename, "rb") as file:
         await context.bot.send_document(chat_id=update.effective_user.id, document=InputFile(file, filename))
 
-# "/help"
+# ---------------- Misc Commands ----------------
 @restricted
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-
-    # Base help text for all users
     help_text = (
         "*Bot Commands:*\n\n"
         "👤 *For All Users:*\n"
@@ -297,8 +232,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/register` — Register yourself in the bot\n"
         "`/cancel` — Cancel an ongoing registration\n"
     )
-
-    # Add admin commands only if the user is an admin
     if user_id == ADMIN_ID:
         help_text += (
             "\n🔑 *Admin Commands:*\n"
@@ -309,10 +242,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "`/export` — Export all registered users to Excel\n"
             "`/export_pending` — Export all pending registrations to Excel\n"
         )
-
     await update.message.reply_text(help_text, parse_mode="Markdown")
 
-# "/food" !!! need to update proper food options !!!!
 @restricted
 async def food(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -322,52 +253,47 @@ async def food(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🍔 Popular Hall 5 GrabFood", callback_data="grab_options")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
     await update.message.reply_text("🍽 What are you looking for?", reply_markup=reply_markup)
 
 @restricted
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
-    if query.data == "supper_nearby":
-        await query.edit_message_text("🍜 Recommended Supper Spots:\n- Jurong West 505 [Route](https://www.google.com/maps/dir/?api=1&destination=1.3470,103.7035)", parse_mode="Markdown")
-    elif query.data == "food_near_hall":
-        await query.edit_message_text("🍛 NTU Food Near Hall:\n- North Spine Koufu [Route](https://www.google.com/maps/dir/?api=1&destination=1.3485,103.6836)", parse_mode="Markdown")
-    elif query.data == "supper_channels":
-        await query.edit_message_text("🔗 Supper Telegram Channels:\n- @ntusupperclub\n- @ntu_latenights")
-    elif query.data == "grab_options":
-        await query.edit_message_text("🍔 Popular GrabFood Picks:\n- McDonald's Jurong West\n- KFC Pioneer\n- Mr Bean NTU")
+    responses = {
+        "supper_nearby": "🍜 Recommended Supper Spots:\n- Extension [Route](https://maps.app.goo.gl/rZB82rqL4fhewZnL9)\n- Prata Shop nearby [Route](https://maps.app.goo.gl/qYPhyT6M5kUbgKYP8)",
+        "food_near_hall": "🍛 NTU Food Near Hall:\n- Canteen 4\n- Canteen 2\n- Canteen 1\n- Crespion\n- South Spine",
+        "supper_channels": "🔗 Supper Telegram Channels:\n- https://t.me/GigabiteNTU\n- https://t.me/dingontu\n- https://t.me/urmomscooking\n- https://t.me/NomAtNTU\n- https://t.me/AnAcaiAffairXNTU",
+        "grab_options": "🍔 Popular GrabFood Picks:\n- McDonald's Jurong West\n- Bai Li Xiang\n- Kimly Dim Sum"
+    }
+    if query.data in responses:
+        await query.edit_message_text(responses[query.data], parse_mode="Markdown")
 
 @restricted
-# /groups
 async def groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = (
         "*🏛️ HALL 5 GROUP CHATS TO JOIN !*\n\n"
         "*HALL V ANNOUNCEMENTS:*\n"
-        "[https://t.me/+X6aJeSaPg-JjMDI1](https://t.me/+X6aJeSaPg-JjMDI1)\n\n"
-
-        "*BLOCK CHATS TO CONNECT WITH UR BLOCK MATES!:*\n\n"
-        "*Purple Block (Block 28)💜:* [https://t.me/+YLowJE5pAI4zYWNl](https://t.me/+YLowJE5pAI4zYWNl)\n"
-        "*Orange Block (Block 29)🧡:* [https://t.me/+KcGB8uMeP8ZmZTE1](https://t.me/+KcGB8uMeP8ZmZTE1)\n"
-        "*Blue Block (Block 30)💙:* [https://t.me/+lK95Tc_NFgc4OTBl](https://t.me/+lK95Tc_NFgc4OTBl)\n"
-        "*Green Block (Block 31)💚:* [https://t.me/+0rHuc8UPaY01ZWY1](https://t.me/+0rHuc8UPaY01ZWY1)\n\n"
-
-        "*HALL V SPORTS FANATICS!*\n"
-        "Join in for impromptu night sports sessions!:\n"
-        "https://t.me/+urn2-hrYt-A2OWY1"
+        "[Announcements](https://t.me/+X6aJeSaPg-JjMDI1)\n\n"
+        "*BLOCK CHATS:*\n"
+        "💜 [Purple Block (Block 28)](https://t.me/+YLowJE5pAI4zYWNl)\n"
+        "🧡 [Orange Block (Block 29)](https://t.me/+KcGB8uMeP8ZmZTE1)\n"
+        "💙 [Blue Block (Block 30)](https://t.me/+lK95Tc_NFgc4OTBl)\n"
+        "💚 [Green Block (Block 31)](https://t.me/+0rHuc8UPaY01ZWY1)\n\n"
+        "*HALL V SPORTS FANATICS:*\n"
+        "[Join Sports Sessions](https://t.me/+urn2-hrYt-A2OWY1)\n\n"
+        "*HALL V SPORTS CLUBS:*\n"
+        "[Sports Activities](https://linktr.ee/HALLVSPORTS)\n\n"
+        "*HALL V RECREATIONAL GAMES:*\n"
+        "[Recreational Games](https://linktr.ee/HALLVREC)"
     )
-
     await update.message.reply_text(message, parse_mode="Markdown")
 
-
-
+# ---------------- Main ----------------
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-
     app.post_init = set_bot_commands
 
-    # Commands
+    # Command Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("approve", approve))
     app.add_handler(CommandHandler("reject", reject))
@@ -380,9 +306,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(CommandHandler("groups", groups))
 
-
-
-    # Register conversation
+    # Registration Conversation
     register_conv = ConversationHandler(
         entry_points=[CommandHandler("register", start_registration)],
         states={
@@ -394,13 +318,7 @@ def main():
     )
     app.add_handler(register_conv)
 
-
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
-
-
-
-
