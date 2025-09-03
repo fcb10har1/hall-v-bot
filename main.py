@@ -21,7 +21,7 @@ from database import (
     get_registered_users
 )
 import pandas as pd
-import tempfile
+import io
 from functools import wraps
 import sqlite3
 
@@ -211,40 +211,43 @@ def export_pending_to_excel(filename="pending_users.xlsx"):
 
 # Keep these command handlers async with @restricted
 @restricted
-async def export(update, context):
+async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = get_registered_users()
     if not users:
         await update.message.reply_text("⚠️ No registered users found to export.")
         return
-
+    
     df = pd.DataFrame(users, columns=["User ID", "Name", "Block", "Room"])
-
-    # Use a temporary file
-    with tempfile.NamedTemporaryFile(suffix=".xlsx") as tmp:
-        df.to_excel(tmp.name, index=False)
-        tmp.seek(0)  # rewind file
-        await context.bot.send_document(
-            chat_id=update.effective_user.id,
-            document=InputFile(tmp.name, filename="registered_users.xlsx")
-        )
+    
+    # Create Excel in memory
+    output = io.BytesIO()
+    df.to_excel(output, index=False)
+    output.seek(0)
+    
+    await context.bot.send_document(
+        chat_id=update.effective_user.id,
+        document=InputFile(output, filename="registered_users.xlsx")
+    )
 
 
 @restricted
-async def export_pending(update, context):
+async def export_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = get_pending_users()
     if not users:
         await update.message.reply_text("⚠️ No pending users found to export.")
         return
-
+    
     df = pd.DataFrame(users, columns=["User ID", "Name", "Block", "Room"])
-
-    with tempfile.NamedTemporaryFile(suffix=".xlsx") as tmp:
-        df.to_excel(tmp.name, index=False)
-        tmp.seek(0)
-        await context.bot.send_document(
-            chat_id=update.effective_user.id,
-            document=InputFile(tmp.name, filename="pending_users.xlsx")
-        )
+    
+    # Create Excel in memory
+    output = io.BytesIO()
+    df.to_excel(output, index=False)
+    output.seek(0)
+    
+    await context.bot.send_document(
+        chat_id=update.effective_user.id,
+        document=InputFile(output, filename="pending_users.xlsx")
+    )
 
 # ---------------- Misc Commands ----------------
 @restricted
