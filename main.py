@@ -67,6 +67,10 @@ async def set_bot_commands(application):
         BotCommand("remove", "Admin: Remove a registered user"),
         BotCommand("export", "Admin: Export registered users"),
         BotCommand("export_pending", "Admin: Export pending users")
+        #BotCommand("committees", "Committees in Hall V")
+        #BotCommand("bookings", "Make bookings to borrow Sports Items")
+        #BotCommand("upcoming_events", "Find out about upcoming Fiver Events!")
+        #BotCommand("Vstop", "Event Feedback, Lost&Found, Fault reporting, Q&A, Security Matters")
     ]
     await application.bot.set_my_commands(commands)
 
@@ -123,6 +127,8 @@ async def save_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Registration cancelled.")
     return ConversationHandler.END
+
+
 
 # ---------------- Admin Commands ----------------
 @restricted
@@ -183,8 +189,8 @@ async def remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🗑️ Removed user {user_id}.")
     await context.bot.send_message(chat_id=user_id, text="⚠️ You have been removed from the bot. Please contact the admin.")
 
-@restricted
-async def export_registered_to_excel(filename="registered_users.xlsx"):
+# Remove async from these helpers and keep them synchronous
+def export_registered_to_excel(filename="registered_users.xlsx"):
     users = get_registered_users()
     if not users:
         return False
@@ -192,8 +198,8 @@ async def export_registered_to_excel(filename="registered_users.xlsx"):
     df.to_excel(filename, index=False)
     return True
 
-@restricted
-async def export_pending_to_excel(filename="pending_users.xlsx"):
+
+def export_pending_to_excel(filename="pending_users.xlsx"):
     users = get_pending_users()
     if not users:
         return False
@@ -201,25 +207,34 @@ async def export_pending_to_excel(filename="pending_users.xlsx"):
     df.to_excel(filename, index=False)
     return True
 
+
+# Keep these command handlers async with @restricted
 @restricted
 async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filename = "registered_users.xlsx"
-    success = await export_registered_to_excel(filename)
+    success = export_registered_to_excel(filename)  # No await needed now
     if not success:
         await update.message.reply_text("⚠️ No registered users found to export.")
         return
     with open(filename, "rb") as file:
-        await context.bot.send_document(chat_id=update.effective_user.id, document=InputFile(file, filename))
+        await context.bot.send_document(
+            chat_id=update.effective_user.id,
+            document=InputFile(file, filename)
+        )
+
 
 @restricted
 async def export_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filename = "pending_users.xlsx"
-    success = await export_pending_to_excel(filename)
+    success = export_pending_to_excel(filename)  # No await needed now
     if not success:
         await update.message.reply_text("⚠️ No pending users found to export.")
         return
     with open(filename, "rb") as file:
-        await context.bot.send_document(chat_id=update.effective_user.id, document=InputFile(file, filename))
+        await context.bot.send_document(
+            chat_id=update.effective_user.id,
+            document=InputFile(file, filename)
+        )
 
 # ---------------- Misc Commands ----------------
 @restricted
@@ -280,14 +295,39 @@ async def groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💙 [Blue Block (Block 30)](https://t.me/+lK95Tc_NFgc4OTBl)\n"
         "💚 [Green Block (Block 31)](https://t.me/+0rHuc8UPaY01ZWY1)\n\n"
         "*HALL V SPORTS FANATICS:*\n"
+        "Join in to meet and have impromptu sports sessions with likeminded people !\n"
         "[Join Sports Sessions](https://t.me/+urn2-hrYt-A2OWY1)\n\n"
-        "*HALL V SPORTS CLUBS:*\n"
+        "*HALL V SPORTS:*\n"
+        "Join in an array of exhilarating sports!\n"
         "[Sports Activities](https://linktr.ee/HALLVSPORTS)\n\n"
         "*HALL V RECREATIONAL GAMES:*\n"
+        "Discover ur hidden talents in the many rec games available!\n"
         "[Recreational Games](https://linktr.ee/HALLVREC)"
     )
     await update.message.reply_text(message, parse_mode="Markdown")
 
+#committees (working on it)
+async def committees(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    responses = {
+        "JCRC": "🍜 Recommended Supper Spots:\n- Extension [Route](https://maps.app.goo.gl/rZB82rqL4fhewZnL9)\n- Prata Shop nearby [Route](https://maps.app.goo.gl/qYPhyT6M5kUbgKYP8)",
+        "TYH": "🍛 NTU Food Near Hall:\n- Canteen 4\n- Canteen 2\n- Canteen 1\n- Crespion\n- South Spine",
+        "HAVOC": "🔗 Supper Telegram Channels:\n- https://t.me/GigabiteNTU\n- https://t.me/dingontu\n- https://t.me/urmomscooking\n- https://t.me/NomAtNTU\n- https://t.me/AnAcaiAffairXNTU",
+        "HAPZ": "🍔 Popular GrabFood Picks:\n- McDonald's Jurong West\n- Bai Li Xiang\n- Kimly Dim Sum"
+        "Quindance":
+        "Quinstical Productions":
+        "Vikings":
+        "Jamband": 
+    }
+    if query.data in responses:
+        await query.edit_message_text(responses[query.data], parse_mode="Markdown")
+
+#booking
+
+#upcoming_events
+
+#Vstop
 # ---------------- Main ----------------
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
