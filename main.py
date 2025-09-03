@@ -314,11 +314,11 @@ async def committees(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "JCRC": "🍜 Recommended Supper Spots:\n- Extension [Route](https://maps.app.goo.gl/rZB82rqL4fhewZnL9)\n- Prata Shop nearby [Route](https://maps.app.goo.gl/qYPhyT6M5kUbgKYP8)",
         "TYH": "🍛 NTU Food Near Hall:\n- Canteen 4\n- Canteen 2\n- Canteen 1\n- Crespion\n- South Spine",
         "HAVOC": "🔗 Supper Telegram Channels:\n- https://t.me/GigabiteNTU\n- https://t.me/dingontu\n- https://t.me/urmomscooking\n- https://t.me/NomAtNTU\n- https://t.me/AnAcaiAffairXNTU",
-        "HAPZ": "🍔 Popular GrabFood Picks:\n- McDonald's Jurong West\n- Bai Li Xiang\n- Kimly Dim Sum"
-        "Quindance":
-        "Quinstical Productions":
-        "Vikings":
-        "Jamband": 
+        "HAPZ": "🍔 Popular GrabFood Picks:\n- McDonald's Jurong West\n- Bai Li Xiang\n- Kimly Dim Sum",
+        "Quindance": "Hall V's talented group of dancers!",
+        "Quinstical Productions": "Our very own inhouse production crew!",
+        "Vikings": "HALL V Cheer !",
+        "Jamband": "Jam band",
     }
     if query.data in responses:
         await query.edit_message_text(responses[query.data], parse_mode="Markdown")
