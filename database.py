@@ -1,93 +1,96 @@
+import os
 import sqlite3
+from datetime import datetime
 
-# Initialize the database with two tables: users & pending_users
+DB_PATH = os.getenv("DB_PATH", "/tmp/hall5.db")
+
+
 def init_db():
-    conn = sqlite3.connect("hall5.db")
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-        user_id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        block TEXT NOT NULL,
-        room TEXT NOT NULL,
-        approved INTEGER DEFAULT 0
-        )
-    """)
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
 
-    cursor.execute("""
+        c.execute("""
         CREATE TABLE IF NOT EXISTS pending_users (
-        user_id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        block TEXT NOT NULL,
-        room TEXT NOT NULL
+            user_id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            block TEXT NOT NULL,
+            room TEXT NOT NULL,
+            created_at TEXT NOT NULL
         )
-    """)
+        """)
 
-    conn.commit()
-    conn.close()
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS registered_users (
+            user_id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            block TEXT NOT NULL,
+            room TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """)
 
-# Add user to pending table
-def add_pending_user(user_id, name, block, room):
-    conn = sqlite3.connect("hall5.db")
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO pending_users (user_id, name, block, room) VALUES (?, ?, ?, ?)", (user_id, name, block, room))
-    conn.commit()
-    conn.close()
+        conn.commit()
 
-# Get all pending users
+
+def add_pending_user(user_id: int, name: str, block: str, room: str):
+    created_at = datetime.utcnow().isoformat()
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("""
+        INSERT OR REPLACE INTO pending_users (user_id, name, block, room, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """, (user_id, name, block, room, created_at))
+        conn.commit()
+
+
 def get_pending_users():
-    conn = sqlite3.connect("hall5.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id, name, block, room FROM pending_users")
-    results = cursor.fetchall()
-    conn.close()
-    return results
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("SELECT user_id, name, block, room, created_at FROM pending_users ORDER BY created_at ASC")
+        return c.fetchall()
 
-# Approve user: move from pending_users to users
-def approve_user(user_id):
-    conn = sqlite3.connect("hall5.db")
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT name, block, room FROM pending_users WHERE user_id = ?", (user_id,))
-    user = cursor.fetchone()
-    
-    if user:
-        cursor.execute("INSERT INTO users (user_id, name, block, room, approved) VALUES (?, ?, ?, ?, 1)", (user_id, user[0], user[1], user[2]))
-        cursor.execute("DELETE FROM pending_users WHERE user_id = ?", (user_id,))
-    
-    conn.commit()
-    conn.close()
-    return bool(user)
 
-# Reject user: delete from pending_users
-def reject_user(user_id):
-    conn = sqlite3.connect("hall5.db")
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM pending_users WHERE user_id = ?", (user_id,))
-    conn.commit()
-    conn.close()
+def approve_user(user_id: int) -> bool:
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("SELECT user_id, name, block, room, created_at FROM pending_users WHERE user_id=?", (user_id,))
+        row = c.fetchone()
+        if not row:
+            return False
 
-# Check if user is registered
-def is_registered(user_id):
-    with sqlite3.connect("hall5.db") as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT approved FROM users WHERE user_id = ?", (user_id,))
-        result = cursor.fetchone()
-    return result is not None and result[0]
+        c.execute("""
+        INSERT OR REPLACE INTO registered_users (user_id, name, block, room, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        """, row)
 
-# remove users accidentally added to system
-def remove_user(user_id):
-    conn = sqlite3.connect("hall5.db")
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
-    conn.commit()
-    conn.close()
+        c.execute("DELETE FROM pending_users WHERE user_id=?", (user_id,))
+        conn.commit()
+        return True
+
+
+def reject_user(user_id: int):
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM pending_users WHERE user_id=?", (user_id,))
+        conn.commit()
+
+
+def is_registered(user_id: int) -> bool:
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("SELECT 1 FROM registered_users WHERE user_id=?", (user_id,))
+        return c.fetchone() is not None
+
+
+def remove_user(user_id: int):
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("DELETE FROM registered_users WHERE user_id=?", (user_id,))
+        conn.commit()
+
 
 def get_registered_users():
-    conn = sqlite3.connect("hall5.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT user_id, name, block, room FROM users")
-    results = cursor.fetchall()
-    conn.close()
-    return results
+    with sqlite3.connect(DB_PATH) as conn:
+        c = conn.cursor()
+        c.execute("SELECT user_id, name, block, room, created_at FROM registered_users ORDER BY created_at ASC")
+        return c.fetchall()
