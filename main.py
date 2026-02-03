@@ -418,14 +418,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• Bai Li Xiang\n"
             "• Kimly Dim Sum"
         ),
-        "JCRC": "JCRC info...",
-        "TYH": "TYH info...",
-        "HAVOC": "HAVOC info...",
-        "HAPZ": "HAPZ info...",
-        "Quindance": "Quindance info...",
-        "Quinstical Productions": "Quinstical Productions info...",
-        "Vikings": "Vikings info...",
-        "Jamband": "Jamband info...",
+        "JCRC": "The heart of the hall, organizing events and fostering community spirit.",
+        "TYH": "Twenty one young hearts, spreading love to the community through various initiatives.",
+        "HAVOC": "The brains behind hall orientation.",
+        "HAPZ": "Pageantry committee that adds color and vibrance to hall events.",
+        "Quindance": "Our very own passionate and talented dance team",
+        "Quinstical Productions": "Our hall's theatre troupe, bringing stories to life on stage.",
+        "Vikings": "Cheer team with incredible flips and stunts to hype up the hall spirit!",
+        "Jamband": "The musical soul of Hall V, creating unforgettable melodies and rhythms.",
     }
 
     if query.data in responses:
