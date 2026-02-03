@@ -65,6 +65,7 @@ EQUIPMENTS = [
 # ---------------- STATES ----------------
 ASK_NAME, ASK_BLOCK, ASK_ROOM = range(3)
 ASK_EQUIP, ASK_DATE, ASK_DURATION = range(10, 13)
+ASK_AUNTY_LOCATION = 20
 
 
 # ---------------- HELPERS ----------------
@@ -373,67 +374,6 @@ async def food(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🍽 What are you looking for?", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
-@restricted
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    # show canteen selector
-    if query.data == "food_near_hall":
-        keyboard = [
-            [InlineKeyboardButton("🏫 Canteen 1", callback_data="canteen_1"),
-             InlineKeyboardButton("🏫 Canteen 2", callback_data="canteen_2")],
-            [InlineKeyboardButton("🏫 Canteen 4", callback_data="canteen_4"),
-             InlineKeyboardButton("☕ Crespion", callback_data="crespion")],
-            [InlineKeyboardButton("🍽️ South Spine", callback_data="south_spine")],
-        ]
-        await query.edit_message_text("🍽 Select a canteen to explore:", reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-
-    # show canteen food list
-    if query.data in CANTEEN_MENUS:
-        canteen = CANTEEN_MENUS[query.data]
-        food_list = "\n".join([f"• {f}" for f in canteen["food"]])
-        message = f"{canteen['name']}\n\n📋 *Food Options:*\n{food_list}"
-        await query.edit_message_text(message, parse_mode="Markdown")
-        return
-
-    responses = {
-        "supper_nearby": (
-            "🍜 *Supper Spots Nearby:*\n\n"
-            "• [Extension](https://maps.app.goo.gl/56sPvRMdJPujKLzb7)\n"
-            "• [Nearby Prata Shop](https://maps.app.goo.gl/d3A4HLFudtiPQQKP6)"
-        ),
-        "supper_channels": (
-            "🔗 *Supper Telegram Channels:*\n\n"
-            "• [GigabiteNTU](https://t.me/GigabiteNTU)\n"
-            "• [DingoNTU](https://t.me/dingontu)\n"
-            "• [UrMomsCooking](https://t.me/urmomscooking)\n"
-            "• [NomAtNTU](https://t.me/NomAtNTU)\n"
-            "• [AnAcaiAffairXNTU](https://t.me/AnAcaiAffairXNTU)"
-        ),
-        "grab_options": (
-            "🍔 *Popular GrabFood Options:*\n\n"
-            "• McDonald's Pioneer Mall\n"
-            "• Bai Li Xiang\n"
-            "• Kimly Dim Sum"
-            "• Ah Longs pancakes\n"
-            "• Western Bar\n"
-            "• The Soup Spoon Union"
-        ),
-        "JCRC": "The heart of the hall, organizing events and fostering community spirit.",
-        "TYH": "Twenty one young hearts, spreading love to the community through various initiatives.",
-        "HAVOC": "The brains behind hall orientation.",
-        "HAPZ": "Pageantry committee that adds color and vibrance to hall events.",
-        "Quindance": "Our very own passionate and talented dance team",
-        "Quinstical Productions": "Our hall's theatre troupe, bringing stories to life on stage.",
-        "Vikings": "Cheer team with incredible flips and stunts to hype up the hall spirit!",
-        "Jamband": "The musical soul of Hall V, creating unforgettable melodies and rhythms.",
-    }
-
-    if query.data in responses:
-        await query.edit_message_text(responses[query.data], parse_mode="Markdown")
-
 
 @restricted
 async def groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -595,6 +535,135 @@ async def all_daily_bookings_cmd(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 
+# ---------- ENEMY SPOTTED --------
+@restricted
+async def enemy_spotted(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("👀 Where is Hall Aunty? Please describe the location or area:")
+    return ASK_AUNTY_LOCATION
+
+async def aunty_location_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    location_msg = update.message.text
+    
+    # Store for admin verification
+    context.user_data["aunty_location"] = location_msg
+    context.user_data["reporter_id"] = user.id
+    context.user_data["reporter_name"] = user.full_name or "Unknown"
+    
+    # Send to admin with approve/reject buttons
+    keyboard = [
+        [InlineKeyboardButton("✅ Broadcast", callback_data="broadcast_aunty"), 
+         InlineKeyboardButton("❌ Reject", callback_data="reject_aunty")],
+    ]
+    
+    admin_msg = (f"🚨 *Hall Aunty Spotted!*\n\n"
+                 f"Reporter: {context.user_data['reporter_name']} (ID: {user.id})\n"
+                 f"Location: {location_msg}")
+    
+    await context.bot.send_message(
+        chat_id=ADMIN_ID,
+        text=admin_msg,
+        parse_mode="Markdown",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    
+    await update.message.reply_text("✅ Report sent to admin for verification!")
+    return ConversationHandler.END
+
+async def cancel_enemy_spotted(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Report cancelled.")
+    return ConversationHandler.END
+
+
+# Update button_handler to include broadcast/reject
+@restricted
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    # Handle aunty broadcast
+    if query.data == "broadcast_aunty":
+        if query.from_user.id != ADMIN_ID:
+            await query.edit_message_text("❌ Only admin can broadcast.")
+            return
+        
+        # Get all registered users and broadcast
+        users = get_registered_users()
+        if not users:
+            await query.edit_message_text("⚠️ No registered users to broadcast to.")
+            return
+        
+        broadcast_msg = "🚨 *HALL AUNTY SPOTTED!* 🚨\n\n"
+        # You can customize what info to show here
+        await query.edit_message_text(broadcast_msg + "Sending alerts...", parse_mode="Markdown")
+        
+        # Send to all users
+        for user in users:
+            try:
+                await context.bot.send_message(
+                    chat_id=user[0],
+                    text=broadcast_msg + "Check the admin message for location details!",
+                    parse_mode="Markdown"
+                )
+            except Exception as e:
+                print(f"Failed to send to {user[0]}: {e}")
+        
+        await query.edit_message_text("✅ Broadcast sent to all users!", parse_mode="Markdown")
+        return
+    
+    # Handle aunty reject
+    if query.data == "reject_aunty":
+        if query.from_user.id != ADMIN_ID:
+            await query.edit_message_text("❌ Only admin can reject.")
+            return
+        await query.edit_message_text("❌ Report rejected.", parse_mode="Markdown")
+        return
+
+    # Handle canteen selections - show food options
+    if query.data in CANTEEN_MENUS:
+        canteen = CANTEEN_MENUS[query.data]
+        food_list = "\n".join([f"• {food}" for food in canteen["food"]])
+        message = f"{canteen['name']}\n\n📋 *Food Options:*\n{food_list}"
+        await query.edit_message_text(message, parse_mode="Markdown")
+        return
+
+    # Handle "Food Places Near Hall" - show canteen buttons
+    if query.data == "food_near_hall":
+        keyboard = [
+            [InlineKeyboardButton("🏫 Canteen 1", callback_data="canteen_1"), InlineKeyboardButton("🏫 Canteen 2", callback_data="canteen_2")],
+            [InlineKeyboardButton("🏫 Canteen 4", callback_data="canteen_4"), InlineKeyboardButton("☕ Crespion", callback_data="crespion")],
+            [InlineKeyboardButton("🍽️ South Spine", callback_data="south_spine")],
+        ]
+        await query.edit_message_text("🍽 Select a canteen to explore:", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    # Handle other callbacks
+    responses = {
+        "supper_nearby": ("🍜 *Supper Spots Nearby:*\n\n"
+                         "• [Extension](https://maps.app.goo.gl/56sPvRMdJPujKLzb7)\n"
+                         "• [Nearby Prata Shop](https://maps.app.goo.gl/d3A4HLFudtiPQQKP6)"),
+        "supper_channels": ("🔗 *Supper Telegram Channels:*\n\n"
+                           "• [GigabiteNTU](https://t.me/GigabiteNTU)\n"
+                           "• [DingoNTU](https://t.me/dingontu)\n"
+                           "• [UrMomsCooking](https://t.me/urmomscooking)\n"
+                           "• [NomAtNTU](https://t.me/NomAtNTU)\n"
+                           "• [AnAcaiAffairXNTU](https://t.me/AnAcaiAffairXNTU)"),
+        "grab_options": ("🍔 *Popular GrabFood Options:*\n\n"
+                        "• McDonald's Jurong West\n"
+                        "• Bai Li Xiang\n"
+                        "• Kimly Dim Sum"),
+        "JCRC": "JCRC info...",
+        "TYH": "TYH info...",
+        "HAVOC": "HAVOC info...",
+        "HAPZ": "HAPZ info...",
+        "Quindance": "Quindance info...",
+        "Quinstical Productions": "Quinstical Productions info...",
+        "Vikings": "Vikings info...",
+        "Jamband": "Jamband info...",
+    }
+    if query.data in responses:
+        await query.edit_message_text(responses[query.data], parse_mode="Markdown")
+
 # ---------------- MAIN ----------------
 def main():
     init_db()
@@ -651,6 +720,16 @@ def main():
     app.add_handler(CommandHandler("booking_reject", booking_reject))
     app.add_handler(CommandHandler("daily_bookings", daily_bookings_cmd))
     app.add_handler(CommandHandler("all_daily_bookings", all_daily_bookings_cmd))
+
+    # enemy spotted convo
+    enemy_spotted_conv = ConversationHandler(
+        entry_points=[CommandHandler("enemyspotted", enemy_spotted)],
+        states={
+            ASK_AUNTY_LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, aunty_location_received)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_enemy_spotted)],
+    )
+    app.add_handler(enemy_spotted_conv)
 
     app.run_polling(close_loop=False)
 
