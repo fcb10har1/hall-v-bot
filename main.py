@@ -156,7 +156,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*WASSUP FIVERS !! 🎉*\n"
         "Welcome to your personal Fiver buddy 🌟\n\n"
         "Register: `/register`\n"
-        "Book equipment: `/book`\n",
+        "Need help on commands you can use?: `/help`\n",
         parse_mode="Markdown",
     )
 
@@ -341,6 +341,30 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- FOOD ----------------
 @restricted
+# Canteen menu data
+CANTEEN_MENUS = {
+    "canteen_1": {
+        "name": "🏫 Canteen 1",
+        "food": ["Chicken Rice", "Fried Noodles", "Laksa", "Roti Prata", "Vegetable Soup"],
+    },
+    "canteen_2": {
+        "name": "🏫 Canteen 2",
+        "food": ["Fish & Chips", "Chicken Cutlet", "Fried Rice", "Mixed Vegetables", "Satay Skewers"],
+    },
+    "canteen_4": {
+        "name": "🏫 Canteen 4",
+        "food": ["Bee Hoon", "Chicken Wings", "Grilled Fish", "Stir Fried Greens", "Spring Rolls"],
+    },
+    "crespion": {
+        "name": "☕ Crespion",
+        "food": ["Crepes (Sweet & Savoury)", "Coffee Drinks", "Pastries", "Smoothie Bowls", "Desserts"],
+    },
+    "south_spine": {
+        "name": "🍽️ South Spine",
+        "food": ["International Cuisine", "Asian Fusion", "Vegetarian Options", "Burgers & Sandwiches", "Desserts & Beverages"],
+    },
+}
+
 async def food(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("🍜 Supper Spots Nearby", callback_data="supper_nearby")],
@@ -356,9 +380,27 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
+    # Handle canteen selections - show food options
+    if query.data in CANTEEN_MENUS:
+        canteen = CANTEEN_MENUS[query.data]
+        food_list = "\n".join([f"• {food}" for food in canteen["food"]])
+        message = f"{canteen['name']}\n\n📋 *Food Options:*\n{food_list}"
+        await query.edit_message_text(message, parse_mode="Markdown")
+        return
+
+    # Handle "Food Places Near Hall" - show canteen buttons
+    if query.data == "food_near_hall":
+        keyboard = [
+            [InlineKeyboardButton("🏫 Canteen 1", callback_data="canteen_1"), InlineKeyboardButton("🏫 Canteen 2", callback_data="canteen_2")],
+            [InlineKeyboardButton("🏫 Canteen 4", callback_data="canteen_4"), InlineKeyboardButton("☕ Crespion", callback_data="crespion")],
+            [InlineKeyboardButton("🍽️ South Spine", callback_data="south_spine")],
+        ]
+        await query.edit_message_text("🍽 Select a canteen to explore:", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    # Handle other callbacks
     responses = {
-        "supper_nearby": "🍜 Supper spots: Extension / Prata (add your links)",
-        "food_near_hall": "🍛 Canteen 4 / Canteen 2 / Canteen 1 / Crespion / South Spine",
+        "supper_nearby": "🍜 Supper spots: Extension (https://maps.app.goo.gl/56sPvRMdJPujKLzb7) / Nearby Prata Shop (https://maps.app.goo.gl/d3A4HLFudtiPQQKP6) ",
         "supper_channels": "🔗 Supper channels: (add your links)",
         "grab_options": "🍔 McDonald's / Bai Li Xiang / Kimly Dim Sum",
         "JCRC": "JCRC info...",
