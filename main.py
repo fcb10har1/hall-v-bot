@@ -414,9 +414,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ),
         "grab_options": (
             "🍔 *Popular GrabFood Options:*\n\n"
-            "• McDonald's Jurong West\n"
+            "• McDonald's Pioneer Mall\n"
             "• Bai Li Xiang\n"
             "• Kimly Dim Sum"
+            "• Ah Longs pancakes\n"
+            "• Western Bar\n"
+            "• The Soup Spoon Union"
         ),
         "JCRC": "The heart of the hall, organizing events and fostering community spirit.",
         "TYH": "Twenty one young hearts, spreading love to the community through various initiatives.",
