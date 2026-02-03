@@ -131,6 +131,7 @@ async def set_bot_commands(application):
         BotCommand("groups", "View Hall 5 group links"),
         BotCommand("committees", "Committees in Hall V"),
         BotCommand("book", "Request to book sports equipment"),
+        BotCommand("enemyspotted", "Report Hall Aunty sighting"),
 
         # Admin
         BotCommand("pending", "Admin: View pending registrations"),
@@ -311,28 +312,32 @@ async def export_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
     text = (
-        "*Commands:*\n"
-        "`/start`\n"
-        "`/register`\n"
-        "`/book`\n"
-        "`/food`\n"
-        "`/groups`\n"
-        "`/committees`\n"
+        "*👤 User Commands:*\n\n"
+        "`/start` — Welcome message\n"
+        "`/register` — Register yourself in the bot\n"
+        "`/book` — Request to book sports equipment\n"
+        "`/food` — Find supper and food options\n"
+        "`/groups` — View Hall 5 group links\n"
+        "`/committees` — View Hall V committees\n"
+        "`/enemyspotted` — Report Hall Aunty sighting\n"
+        "`/cancel` — Cancel an ongoing process\n"
     )
     if uid == ADMIN_ID:
         text += (
-            "\n*Admin:*\n"
-            "`/pending`\n"
-            "`/approve <user_id>`\n"
-            "`/reject <user_id>`\n"
-            "`/remove <user_id>`\n"
-            "`/export`\n"
-            "`/export_pending`\n"
-            "`/booking_pending`\n"
-            "`/booking_approve <booking_id>`\n"
-            "`/booking_reject <booking_id>`\n"
-            "`/daily_bookings`\n"
-            "`/all_daily_bookings`\n"
+            "\n*🔑 Admin Commands:*\n\n"
+            "*User Management:*\n"
+            "`/pending` — View pending registrations\n"
+            "`/approve <user_id>` — Approve a pending user\n"
+            "`/reject <user_id>` — Reject a pending user\n"
+            "`/remove <user_id>` — Remove a registered user\n"
+            "`/export` — Export registered users to Excel\n"
+            "`/export_pending` — Export pending users to Excel\n\n"
+            "*Booking Management:*\n"
+            "`/booking_pending` — View pending bookings\n"
+            "`/booking_approve <booking_id>` — Approve a booking\n"
+            "`/booking_reject <booking_id>` — Reject a booking\n"
+            "`/daily_bookings` — View today's approved bookings\n"
+            "`/all_daily_bookings` — View all today's bookings\n"
         )
     await update.message.reply_text(text, parse_mode="Markdown")
 
