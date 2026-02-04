@@ -750,7 +750,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "grab_options": ("🍔 *Popular GrabFood Options:*\n\n"
                         "• McDonald's Jurong West\n"
                         "• Bai Li Xiang\n"
-                        "• Kimly Dim Sum"),
+                        "• Kimly Dim Sum\n"
+                        "• Ah Long's Pancake\n"
+                        "• Western Food"),
     }
     
     # Handle committee selections - send photos with info
