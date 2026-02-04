@@ -436,6 +436,148 @@ async def show_committees(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     await update.message.reply_text("Select a committee:", reply_markup=InlineKeyboardMarkup(keyboard))
 
+# ---------------- BOOKING FLOW ----------------
+@restricted
+async def start_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    reply_keyboard = [EQUIPMENTS[i:i + 2] for i in range(0, len(EQUIPMENTS), 2)]
+    markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True, resize_keyboard=True)
+    await update.message.reply_text("Which equipment would you like to book?", reply_markup=markup)
+    return ASK_EQUIP
+
+
+async def ask_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["equipment"] = update.message.text.strip()
+    await update.message.reply_text("Booking date (YYYY-MM-DD) or 'today'/'tomorrow':")
+    return ASK_DATE
+
+
+async def ask_duration(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    txt = update.message.text
+    if not _valid_date(txt):
+        await update.message.reply_text("Invalid date. Use YYYY-MM-DD or 'today'/'tomorrow'.")
+        return ASK_DATE
+    context.user_data["date"] = _normalize_date(txt)
+    await update.message.reply_text("How long? (e.g. 2 hours / half day)")
+    return ASK_DURATION
+
+
+async def confirm_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    duration = update.message.text.strip()
+    user = update.effective_user
+
+    equipment = context.user_data.get("equipment")
+    date = context.user_data.get("date")
+    name = user.full_name or ""
+
+    booking_id = add_booking(user.id, name, equipment, date, duration)
+
+    await update.message.reply_text(f"✅ Booking submitted (ID: {booking_id}). Await admin approval.")
+
+    await notify_admins(
+        context.bot,
+        (
+            f"📢 *New booking request* (ID: {booking_id})\n"
+            f"User: {name} (`{user.id}`)\n"
+            f"Equipment: {equipment}\n"
+            f"Date: {date}\n"
+            f"Duration: {duration}\n\n"
+            f"/booking_approve {booking_id}\n"
+            f"/booking_reject {booking_id}"
+        ),
+    )
+    return ConversationHandler.END
+
+
+async def cancel_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Booking cancelled.")
+    return ConversationHandler.END
+
+
+# ---------------- BOOKING ADMIN ----------------
+@restricted
+async def booking_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Not authorized.")
+        return
+
+    pending_list = get_pending_bookings()
+    if not pending_list:
+        await update.message.reply_text("✅ No pending bookings.")
+        return
+
+    msg = "*Pending Bookings:*\n"
+    for b in pending_list:
+        msg += f"- ID {b[0]}: {b[2] or 'Unknown'} (UID {b[1]}) — {b[3]} on {b[4]} ({b[5]})\n"
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+@restricted
+async def booking_approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Not authorized.")
+        return
+    try:
+        booking_id = int(context.args[0])
+    except (IndexError, ValueError):
+        await update.message.reply_text("⚠️ Usage: /booking_approve <booking_id>")
+        return
+
+    user_id = approve_booking_db(booking_id)
+    if user_id:
+        await update.message.reply_text(f"✅ Approved booking {booking_id}.")
+        await context.bot.send_message(chat_id=user_id, text=f"✅ Your booking (ID {booking_id}) is approved.")
+    else:
+        await update.message.reply_text("❌ Booking not found or already processed.")
+
+
+@restricted
+async def booking_reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Not authorized.")
+        return
+    try:
+        booking_id = int(context.args[0])
+    except (IndexError, ValueError):
+        await update.message.reply_text("⚠️ Usage: /booking_reject <booking_id>")
+        return
+
+    user_id = reject_booking_db(booking_id)
+    if user_id:
+        await update.message.reply_text(f"❌ Rejected booking {booking_id}.")
+        await context.bot.send_message(chat_id=user_id, text=f"❌ Your booking (ID {booking_id}) is rejected.")
+    else:
+        await update.message.reply_text("❌ Booking not found or already processed.")
+
+
+@restricted
+async def daily_bookings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Not authorized.")
+        return
+    bookings = get_daily_bookings()
+    if not bookings:
+        await update.message.reply_text("✅ No approved bookings today.")
+        return
+    msg = "📋 *Today's Approved Bookings:*\n\n"
+    for b in bookings:
+        msg += f"• ID {b[0]}: {b[2]} — {b[3]} ({b[4]})\n"
+    await update.message.reply_text(msg, parse_mode="Markdown")
+
+
+@restricted
+async def all_daily_bookings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ Not authorized.")
+        return
+    bookings = get_all_daily_bookings()
+    if not bookings:
+        await update.message.reply_text("✅ No bookings today.")
+        return
+    msg = "📋 *All Today's Bookings:*\n\n"
+    for b in bookings:
+        icon = "✅" if b[5] == "approved" else "⏳" if b[5] == "pending" else "❌"
+        msg += f"{icon} ID {b[0]}: {b[2]} — {b[3]} ({b[4]}) [{b[5]}]\n"
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
 # ---------- ENEMY SPOTTED --------
 @restricted
