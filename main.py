@@ -56,10 +56,10 @@ if not BOT_TOKEN:
 
 # ---------------- CONSTANTS ----------------
 EQUIPMENTS = [
-    "Basketball", "Soccer Ball",
-    "Badminton Racket", "Shuttlecock",
-    "Volleyball", "Floorball Stick",
-    "Floorball Ball", "Tennis Racket",
+    "Basketball", "Football",
+    "Badminton Items",
+    "Volleyball", "Floorball items",
+    "Tennis Items", "Table Tennis Items", "Frisbee", "Touch Rugby", "Softball", "Pickleball",
 ]
 
 # ---------------- STATES ----------------
