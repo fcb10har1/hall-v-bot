@@ -67,6 +67,8 @@ ASK_NAME, ASK_BLOCK, ASK_ROOM = range(3)
 ASK_EQUIP, ASK_DATE, ASK_DURATION = range(10, 13)
 ASK_AUNTY_LOCATION = 20
 
+# Temporary storage for pending aunty reports
+pending_aunty_reports = {}
 
 # ---------------- HELPERS ----------------
 def _valid_date(text: str) -> bool:
@@ -381,8 +383,27 @@ async def food(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @restricted
+@restricted
 async def groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Put your group links here.", parse_mode="Markdown")
+    message = (
+        "*🏛️ HALL V GROUP CHATS TO JOIN!*\n\n"
+        "*ANNOUNCEMENTS:*\n"
+        "[Announcements](https://t.me/)\n\n"
+        "*BLOCK CHATS:*\n"
+        "💜 [Purple Block (Block 28)](https://t.me/+YLowJE5pAI4zYWNl)\n"
+        "🧡 [Orange Block (Block 29)](https://t.me/+KcGB8uMeP8ZmZTE1)\n"
+        "💙 [Blue Block (Block 30)](https://t.me/+lK95Tc_NFgc4OTBl)\n"
+        "💚 [Green Block (Block 31)](https://t.me/+0rHuc8UPaY01ZWY1)\n\n"
+        "*HALL V SPORTS FANATICS:*\n"
+        "Join in to meet and have impromptu sports sessions with likeminded people!\n"
+        "[Sports Fanatics](https://t.me/+urn2-hrYt-A2OWY1)\n\n"
+        "*HALL V SPORTS:*\n"
+        "[Sports Activities](https://linktr.ee/HALLVSPORTS)\n\n"
+        "*HALL V RECREATIONAL GAMES:*\n"
+        "Discover ur hidden talents in the many rec games available!\n"
+        "[Recreational Games](https://linktr.ee/HALLVREC)"
+    )
+    await update.message.reply_text(message, parse_mode="Markdown")
 
 
 async def show_committees(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -550,19 +571,22 @@ async def aunty_location_received(update: Update, context: ContextTypes.DEFAULT_
     user = update.effective_user
     location_msg = update.message.text
     
-    # Store for admin verification
-    context.user_data["aunty_location"] = location_msg
-    context.user_data["reporter_id"] = user.id
-    context.user_data["reporter_name"] = user.full_name or "Unknown"
+    # Store report data
+    report_id = f"aunty_{user.id}_{datetime.utcnow().timestamp()}"
+    pending_aunty_reports[report_id] = {
+        "location": location_msg,
+        "reporter_id": user.id,
+        "reporter_name": user.full_name or "Unknown"
+    }
     
     # Send to admin with approve/reject buttons
     keyboard = [
-        [InlineKeyboardButton("✅ Broadcast", callback_data="broadcast_aunty"), 
-         InlineKeyboardButton("❌ Reject", callback_data="reject_aunty")],
+        [InlineKeyboardButton("✅ Broadcast", callback_data=f"broadcast_aunty_{report_id}"), 
+         InlineKeyboardButton("❌ Reject", callback_data=f"reject_aunty_{report_id}")],
     ]
     
     admin_msg = (f"🚨 *Hall Aunty Spotted!*\n\n"
-                 f"Reporter: {context.user_data['reporter_name']} (ID: {user.id})\n"
+                 f"Reporter: {pending_aunty_reports[report_id]['reporter_name']} (ID: {user.id})\n"
                  f"Location: {location_msg}")
     
     await context.bot.send_message(
@@ -587,10 +611,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     # Handle aunty broadcast
-    if query.data == "broadcast_aunty":
+    if query.data.startswith("broadcast_aunty_"):
         if query.from_user.id != ADMIN_ID:
             await query.edit_message_text("❌ Only admin can broadcast.")
             return
+        
+        report_id = query.data.replace("broadcast_aunty_", "")
+        if report_id not in pending_aunty_reports:
+            await query.edit_message_text("❌ Report not found.")
+            return
+        
+        report = pending_aunty_reports[report_id]
+        location = report["location"]
         
         # Get all registered users and broadcast
         users = get_registered_users()
@@ -598,29 +630,39 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("⚠️ No registered users to broadcast to.")
             return
         
-        broadcast_msg = "🚨 *HALL AUNTY SPOTTED!* 🚨\n\n"
-        # You can customize what info to show here
-        await query.edit_message_text(broadcast_msg + "Sending alerts...", parse_mode="Markdown")
+        await query.edit_message_text("🚨 Sending alerts...", parse_mode="Markdown")
+        
+        broadcast_msg = f"🚨 *HALL AUNTY SPOTTED!* 🚨\n\n*Location: {location}*"
         
         # Send to all users
+        sent_count = 0
         for user in users:
             try:
                 await context.bot.send_message(
                     chat_id=user[0],
-                    text=broadcast_msg + "Check the admin message for location details!",
+                    text=broadcast_msg,
                     parse_mode="Markdown"
                 )
+                sent_count += 1
             except Exception as e:
                 print(f"Failed to send to {user[0]}: {e}")
         
-        await query.edit_message_text("✅ Broadcast sent to all users!", parse_mode="Markdown")
+        # Clean up
+        del pending_aunty_reports[report_id]
+        
+        await query.edit_message_text(f"✅ Broadcast sent to {sent_count} users!", parse_mode="Markdown")
         return
     
     # Handle aunty reject
-    if query.data == "reject_aunty":
+    if query.data.startswith("reject_aunty_"):
         if query.from_user.id != ADMIN_ID:
             await query.edit_message_text("❌ Only admin can reject.")
             return
+        
+        report_id = query.data.replace("reject_aunty_", "")
+        if report_id in pending_aunty_reports:
+            del pending_aunty_reports[report_id]
+        
         await query.edit_message_text("❌ Report rejected.", parse_mode="Markdown")
         return
 
