@@ -1,6 +1,5 @@
 import os
 import io
-import sqlite3
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -25,7 +24,7 @@ from telegram.ext import (
 )
 
 from database import (
-    DB_PATH,
+    get_db_connection,   # ✅ NEW: use this instead of sqlite3 + DB_PATH
     init_db,
     add_pending_user,
     get_pending_users,
@@ -52,15 +51,24 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 # Support multiple admins - can be comma-separated IDs
 ADMIN_IDS_STR = os.getenv("ADMIN_IDS", "1779704544")
-ADMIN_IDS = set(int(id.strip()) for id in ADMIN_IDS_STR.split(","))
-ADMIN_ID = list(ADMIN_IDS)[0]  # For backward compatibility
+ADMIN_IDS = set(int(x.strip()) for x in ADMIN_IDS_STR.split(",") if x.strip())
+ADMIN_ID = next(iter(ADMIN_IDS))  # kept for backward compatibility
 
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN environment variable is not set!")
 
+
 def is_admin(user_id: int) -> bool:
-    """Check if user is an admin"""
     return user_id in ADMIN_IDS
+
+
+async def notify_admins(bot, text: str, parse_mode: str = "Markdown"):
+    """Send a message to all admins (safe if 1 fails)."""
+    for aid in ADMIN_IDS:
+        try:
+            await bot.send_message(chat_id=aid, text=text, parse_mode=parse_mode)
+        except Exception:
+            pass
 
 
 # ---------------- CONSTANTS ----------------
@@ -77,7 +85,6 @@ ASK_EQUIP, ASK_DATE, ASK_DURATION = range(10, 13)
 ASK_AUNTY_LOCATION = 20
 ASK_BROADCAST_MESSAGE = 30
 
-# Temporary storage for pending aunty reports
 pending_aunty_reports = {}
 
 # ---------------- HELPERS ----------------
@@ -111,11 +118,20 @@ def restricted(func):
         if is_admin(user_id):
             return await func(update, context, *args, **kwargs)
 
-        # pending check for nicer UX
-        with sqlite3.connect(DB_PATH) as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT 1 FROM pending_users WHERE user_id=?", (user_id,))
-            is_pending = cur.fetchone() is not None
+        # ✅ FIX: check pending using DB-agnostic connection
+        is_pending = False
+        try:
+            with get_db_connection() as conn:
+                cur = conn.cursor()
+                try:
+                    # Postgres: %s, SQLite: ?
+                    cur.execute("SELECT 1 FROM pending_users WHERE user_id=%s", (user_id,))
+                except Exception:
+                    cur.execute("SELECT 1 FROM pending_users WHERE user_id=?", (user_id,))
+                is_pending = cur.fetchone() is not None
+        except Exception:
+            # If DB is temporarily down, still block restricted actions safely
+            is_pending = False
 
         if not is_registered(user_id):
             if update.message:
@@ -207,9 +223,9 @@ async def save_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("✅ Registration request sent! Await admin approval.")
 
-    await context.bot.send_message(
-        chat_id=ADMIN_ID,
-        text=(
+    await notify_admins(
+        context.bot,
+        (
             f"🚨 *New registration request*\n"
             f"Name: {name}\n"
             f"Block: {block}\n"
@@ -217,7 +233,6 @@ async def save_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"User ID: `{user_id}`\n\n"
             f"/approve {user_id}  or  /reject {user_id}"
         ),
-        parse_mode="Markdown",
     )
     return ConversationHandler.END
 
@@ -351,75 +366,31 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "`/booking_reject <booking_id>` — Reject a booking\n"
             "`/daily_bookings` — View today's approved bookings\n"
             "`/all_daily_bookings` — View all today's bookings\n"
+            "`/broadcast` — Broadcast message to all users\n"
         )
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
 # ---------------- FOOD ----------------
-# ✅ FIX: decorators must NOT be placed on variables
 CANTEEN_MENUS = {
-    "canteen_1": {
-        "name": "🏫 Canteen 1",
-        "food": ["Japanese Curry Rice", "Mala", "Vietnamese Cusine", "Mixed Rice"],
-    },
-    "canteen_2": {
-        "name": "🏫 Canteen 2",
-        "food": ["Western", "Abang Dol", "Chicken Rice", "Mini Wok", "Pasta", "Snail Noodles", "Japanese and Korean Stall", "Caifan"],
-    },
-    "canteen_4": {
-        "name": "🏫 Canteen 4",
-        "food": ["Hot Pot", "Chicken Rice", "Flapjack + waffle + Drink stall"],
-    },
-    "crespion": {
-        "name": "☕ Crespion",
-        "food": ["Caifan", "Thai", "Dingo", "Ban Mian", "Fusion Bowl", "Indian Stall", "Mr Pasta", "Mala", "Tealer BBT", "Drink and Waffle store"], 
-    },
-    "south_spine": {
-        "name": "🍽️ South Spine",
-        "food": ["Ban Mian", "Chicken Rice", "Drink Stall", "Caifan", "La Mian/ Xiao Long Bao", "Mala", "Rice Noodle"],
-    },
+    "canteen_1": {"name": "🏫 Canteen 1", "food": ["Japanese Curry Rice", "Mala", "Vietnamese Cusine", "Mixed Rice"]},
+    "canteen_2": {"name": "🏫 Canteen 2", "food": ["Western", "Abang Dol", "Chicken Rice", "Mini Wok", "Pasta", "Snail Noodles", "Japanese and Korean Stall", "Caifan"]},
+    "canteen_4": {"name": "🏫 Canteen 4", "food": ["Hot Pot", "Chicken Rice", "Flapjack + waffle + Drink stall"]},
+    "crespion": {"name": "☕ Crespion", "food": ["Caifan", "Thai", "Dingo", "Ban Mian", "Fusion Bowl", "Indian Stall", "Mr Pasta", "Mala", "Tealer BBT", "Drink and Waffle store"]},
+    "south_spine": {"name": "🍽️ South Spine", "food": ["Ban Mian", "Chicken Rice", "Drink Stall", "Caifan", "La Mian/ Xiao Long Bao", "Mala", "Rice Noodle"]},
 }
 
-# Committee info with photos
 COMMITTEES = {
-    "JCRC": {
-        "description": "Hall Council\n\nThe heart of Hall V, Hall Council plans major events and initiatives to make hall life vibrant, inclusive, and unforgettable. They shape Hall V's culture and bring FiVers together as one big family.",
-        "photo_url": "https://drive.google.com/uc?export=view&id=1Ah45TyWq6cfQX6Y7-rEj-7IeW5SXKJJP"
-    },
-    "TYH": {
-        "description": "Twenty-One Young Hearts (TYH)\n\nTYH is Hall V's community service committee, dedicated to planning and executing meaningful local and overseas service projects. They foster a strong spirit of service, unity, and giving back among FiVers.",
-        "photo_url": "https://drive.google.com/uc?export=view&id=1aLkv-e3MrB56yEPoT9vCcuOJktUuAkQh"
-    },
-    "HAVOC": {
-        "description": "HAVOC (Hall Orientation Committee)\n\nHAVOC designs an exciting and welcoming orientation for incoming freshmen. Their goal is to help new FiVers feel at home, form strong friendships, and kick-start their Hall V journey with unforgettable memories.",
-        "photo_url": "https://drive.google.com/uc?export=view&id=1FSa71k0UL-twfddQuufl1Z-E1P4i_47D"
-    },
-    "HAPZ": {
-        "description": "HAPZ (Hall Anniversary Party Committee)\n\nHAPZ organises Hall V's milestone events, including Seniors' Farewell and Dinner & Dance. With portfolios spanning Media, Events, BizMag, Creative and Pageant, HAPZ works hard and celebrates harder.",
-        "photo_url": "https://drive.google.com/uc?export=view&id=135sgG29JZu-r9WQdNKkDff_8Jf5Peztz"
-    },
-    "Quindance": {
-        "description": "QuinDanze\n\nHall V's dance club that welcomes dancers of all backgrounds and styles. QuinDanze offers a supportive, family-like environment where passion for dance and lasting friendships take centre stage.",
-        "photo_url": "https://drive.google.com/uc?export=view&id=1qNjutTjEGNpougxl-DAgnHDhiPEGf5X-"
-    },
-    "Quinstical Productions": {
-        "description": "Quintsical Productions (QP)\n\nA creative family of filmmakers, writers, and actors, QP tells captivating stories through film and media. Whether you're experienced or new to production, there's a place for everyone to create and grow together.",
-        "photo_url": "https://drive.google.com/uc?export=view&id=1Ly9cRfUhWWajYrHZ_fpQ3bo3k746Lts7"
-    },
-    "Vikings": {
-        "description": "Vikings\n\nThe spirited cheerleading team of Hall V, founded in 2008. Vikings pride themselves on teamwork, passion, and perseverance, training hard to support Hall V with unwavering energy and heart.",
-        "photo_url": "https://via.placeholder.com/400x300?text=Vikings"
-    },
-    "Jamband": {
-        "description": "Jamband\n\nJamband brings music to life in Hall V through workshops, jam sessions, and live performances. They believe music connects people and are always ready to perform for hall, school, and public events.",
-        "photo_url": "https://drive.google.com/uc?export=view&id=1lpSij_B0fTYrbJ_jPw3ZrAkhECrKRtlC"
-    },
-    "SPOREC": {
-        "description": "SPOREC — Sports & Recreation committee bringing energy and excitement to Hall V with amazing sports and recreational events!",
-        "photo_url": "https://drive.google.com/uc?export=view&id=1hotBBzsWFm7marCS6Yp-7h_DfotSwy5X"
-    },
+    "JCRC": {"description": "Hall Council\n\nThe heart of Hall V, Hall Council plans major events and initiatives to make hall life vibrant, inclusive, and unforgettable.", "photo_url": "https://drive.google.com/uc?export=view&id=1Ah45TyWq6cfQX6Y7-rEj-7IeW5SXKJJP"},
+    "TYH": {"description": "Twenty-One Young Hearts (TYH)\n\nHall V's community service committee planning meaningful service projects.", "photo_url": "https://drive.google.com/uc?export=view&id=1aLkv-e3MrB56yEPoT9vCcuOJktUuAkQh"},
+    "HAVOC": {"description": "HAVOC (Hall Orientation Committee)\n\nRuns Hall V orientation and welcomes freshies.", "photo_url": "https://drive.google.com/uc?export=view&id=1FSa71k0UL-twfddQuufl1Z-E1P4i_47D"},
+    "HAPZ": {"description": "HAPZ (Hall Anniversary Party Committee)\n\nOrganises Hall V's major celebrations like Seniors' Farewell and D&D.", "photo_url": "https://drive.google.com/uc?export=view&id=135sgG29JZu-r9WQdNKkDff_8Jf5Peztz"},
+    "Quindance": {"description": "QuinDanze\n\nHall V’s dance family — all styles, all levels.", "photo_url": "https://drive.google.com/uc?export=view&id=1qNjutTjEGNpougxl-DAgnHDhiPEGf5X-"},
+    "Quinstical Productions": {"description": "Quintsical Productions (QP)\n\nFilm & media crew — shoot, edit, act, create.", "photo_url": "https://drive.google.com/uc?export=view&id=1Ly9cRfUhWWajYrHZ_fpQ3bo3k746Lts7"},
+    "Vikings": {"description": "Vikings\n\nHall V’s cheerleading team bringing energy to every event.", "photo_url": "https://via.placeholder.com/400x300?text=Vikings"},
+    "Jamband": {"description": "Jamband\n\nHall V’s music crew — jam sessions, workshops, performances.", "photo_url": "https://drive.google.com/uc?export=view&id=1lpSij_B0fTYrbJ_jPw3ZrAkhECrKRtlC"},
+    "SPOREC": {"description": "SPOREC\n\nSports & recreation committee running games and sports events.", "photo_url": "https://drive.google.com/uc?export=view&id=1hotBBzsWFm7marCS6Yp-7h_DfotSwy5X"},
 }
-
 
 
 @restricted
@@ -433,8 +404,6 @@ async def food(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🍽 What are you looking for?", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
-
-@restricted
 @restricted
 async def groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = (
@@ -447,13 +416,10 @@ async def groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💙 [Blue Block (Block 30)](https://t.me/+lK95Tc_NFgc4OTBl)\n"
         "💚 [Green Block (Block 31)](https://t.me/+0rHuc8UPaY01ZWY1)\n\n"
         "*HALL V SPORTS FANATICS:*\n"
-        "Join in to meet and have impromptu sports sessions with likeminded people!\n"
         "[Sports Fanatics](https://t.me/+urn2-hrYt-A2OWY1)\n\n"
         "*HALL V SPORTS:*\n"
-        "Join the exhilarating array of sports competitions and activities! Showcase your skills and represent Hall V!\n"
         "[Sports Activities](https://linktr.ee/HALLVSPORTS)\n\n"
         "*HALL V RECREATIONAL GAMES:*\n"
-        "Discover ur hidden talents in the many rec games available!\n"
         "[Recreational Games](https://linktr.ee/HALLVREC)"
     )
     await update.message.reply_text(message, parse_mode="Markdown")
@@ -471,187 +437,39 @@ async def show_committees(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Select a committee:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
-# ---------------- BOOKING FLOW ----------------
-@restricted
-async def start_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reply_keyboard = [EQUIPMENTS[i:i + 2] for i in range(0, len(EQUIPMENTS), 2)]
-    markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True, resize_keyboard=True)
-    await update.message.reply_text("Which equipment would you like to book?", reply_markup=markup)
-    return ASK_EQUIP
-
-
-async def ask_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["equipment"] = update.message.text.strip()
-    await update.message.reply_text("Booking date (YYYY-MM-DD) or 'today'/'tomorrow':")
-    return ASK_DATE
-
-
-async def ask_duration(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    txt = update.message.text
-    if not _valid_date(txt):
-        await update.message.reply_text("Invalid date. Use YYYY-MM-DD or 'today'/'tomorrow'.")
-        return ASK_DATE
-    context.user_data["date"] = _normalize_date(txt)
-    await update.message.reply_text("How long? (e.g. 2 hours / half day)")
-    return ASK_DURATION
-
-
-async def confirm_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    duration = update.message.text.strip()
-    user = update.effective_user
-
-    equipment = context.user_data.get("equipment")
-    date = context.user_data.get("date")
-    name = user.full_name or ""
-
-    booking_id = add_booking(user.id, name, equipment, date, duration)
-
-    await update.message.reply_text(f"✅ Booking submitted (ID: {booking_id}). Await admin approval.")
-
-    try:
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text=(
-                f"📢 *New booking request* (ID: {booking_id})\n"
-                f"User: {name} (`{user.id}`)\n"
-                f"Equipment: {equipment}\n"
-                f"Date: {date}\n"
-                f"Duration: {duration}\n\n"
-                f"/booking_approve {booking_id}\n"
-                f"/booking_reject {booking_id}"
-            ),
-            parse_mode="Markdown",
-        )
-    except Exception:
-        pass
-
-    return ConversationHandler.END
-
-
-async def cancel_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("❌ Booking cancelled.")
-    return ConversationHandler.END
-
-
-# ---------------- BOOKING ADMIN ----------------
-async def booking_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("❌ Not authorized.")
-        return
-
-    pending_list = get_pending_bookings()
-    if not pending_list:
-        await update.message.reply_text("✅ No pending bookings.")
-        return
-
-    msg = "*Pending Bookings:*\n"
-    for b in pending_list:
-        msg += f"- ID {b[0]}: {b[2] or 'Unknown'} (UID {b[1]}) — {b[3]} on {b[4]} ({b[5]})\n"
-    await update.message.reply_text(msg, parse_mode="Markdown")
-
-
-async def booking_approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("❌ Not authorized.")
-        return
-    try:
-        booking_id = int(context.args[0])
-    except (IndexError, ValueError):
-        await update.message.reply_text("⚠️ Usage: /booking_approve <booking_id>")
-        return
-
-    user_id = approve_booking_db(booking_id)
-    if user_id:
-        await update.message.reply_text(f"✅ Approved booking {booking_id}.")
-        await context.bot.send_message(chat_id=user_id, text=f"✅ Your booking (ID {booking_id}) is approved.")
-    else:
-        await update.message.reply_text("❌ Booking not found or already processed.")
-
-
-async def booking_reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("❌ Not authorized.")
-        return
-    try:
-        booking_id = int(context.args[0])
-    except (IndexError, ValueError):
-        await update.message.reply_text("⚠️ Usage: /booking_reject <booking_id>")
-        return
-
-    user_id = reject_booking_db(booking_id)
-    if user_id:
-        await update.message.reply_text(f"❌ Rejected booking {booking_id}.")
-        await context.bot.send_message(chat_id=user_id, text=f"❌ Your booking (ID {booking_id}) is rejected.")
-    else:
-        await update.message.reply_text("❌ Booking not found or already processed.")
-
-
-async def daily_bookings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("❌ Not authorized.")
-        return
-    bookings = get_daily_bookings()
-    if not bookings:
-        await update.message.reply_text("✅ No approved bookings today.")
-        return
-    msg = "📋 *Today's Approved Bookings:*\n\n"
-    for b in bookings:
-        msg += f"• ID {b[0]}: {b[2]} — {b[3]} ({b[4]})\n"
-    await update.message.reply_text(msg, parse_mode="Markdown")
-
-
-async def all_daily_bookings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("❌ Not authorized.")
-        return
-    bookings = get_all_daily_bookings()
-    if not bookings:
-        await update.message.reply_text("✅ No bookings today.")
-        return
-    msg = "📋 *All Today's Bookings:*\n\n"
-    for b in bookings:
-        icon = "✅" if b[5] == "approved" else "⏳" if b[5] == "pending" else "❌"
-        msg += f"{icon} ID {b[0]}: {b[2]} — {b[3]} ({b[4]}) [{b[5]}]\n"
-    await update.message.reply_text(msg, parse_mode="Markdown")
-
-
 # ---------- ENEMY SPOTTED --------
 @restricted
 async def enemy_spotted(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👀 Where is Hall Aunty? Please describe the location or area:")
     return ASK_AUNTY_LOCATION
 
+
 async def aunty_location_received(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     location_msg = update.message.text
-    
-    # Store report data
+
     report_id = f"aunty_{user.id}_{datetime.utcnow().timestamp()}"
     pending_aunty_reports[report_id] = {
         "location": location_msg,
         "reporter_id": user.id,
-        "reporter_name": user.full_name or "Unknown"
+        "reporter_name": user.full_name or "Unknown",
     }
-    
-    # Send to admin with approve/reject buttons
-    keyboard = [
-        [InlineKeyboardButton("✅ Broadcast", callback_data=f"broadcast_aunty_{report_id}"), 
-         InlineKeyboardButton("❌ Reject", callback_data=f"reject_aunty_{report_id}")],
-    ]
-    
-    admin_msg = (f"🚨 *Hall Aunty Spotted!*\n\n"
-                 f"Reporter: {pending_aunty_reports[report_id]['reporter_name']} (ID: {user.id})\n"
-                 f"Location: {location_msg}")
-    
-    await context.bot.send_message(
-        chat_id=ADMIN_ID,
-        text=admin_msg,
-        parse_mode="Markdown",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+
+    keyboard = [[
+        InlineKeyboardButton("✅ Broadcast", callback_data=f"broadcast_aunty_{report_id}"),
+        InlineKeyboardButton("❌ Reject", callback_data=f"reject_aunty_{report_id}"),
+    ]]
+
+    admin_msg = (
+        f"🚨 *Hall Aunty Spotted!*\n\n"
+        f"Reporter: {pending_aunty_reports[report_id]['reporter_name']} (ID: {user.id})\n"
+        f"Location: {location_msg}"
     )
-    
+
+    await notify_admins(context.bot, admin_msg)
     await update.message.reply_text("✅ Report sent to admin for verification!")
     return ConversationHandler.END
+
 
 async def cancel_enemy_spotted(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Report cancelled.")
@@ -664,41 +482,33 @@ async def start_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ You are not authorized.")
         return ConversationHandler.END
-    
     await update.message.reply_text("📢 Enter the message you want to broadcast to all users:")
     return ASK_BROADCAST_MESSAGE
 
 
 async def send_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_text = update.message.text
-    
-    # Get all registered users
+
     users = get_registered_users()
     if not users:
         await update.message.reply_text("⚠️ No registered users to broadcast to.")
         return ConversationHandler.END
-    
+
     await update.message.reply_text(f"📢 Broadcasting message to {len(users)} users...")
-    
-    # Send to all users
+
     sent_count = 0
     failed_count = 0
     for user in users:
         try:
-            await context.bot.send_message(
-                chat_id=user[0],
-                text=message_text,
-                parse_mode="Markdown"
-            )
+            await context.bot.send_message(chat_id=user[0], text=message_text, parse_mode="Markdown")
             sent_count += 1
-        except Exception as e:
-            print(f"Failed to send to {user[0]}: {e}")
+        except Exception:
             failed_count += 1
-    
+
     summary = f"✅ Broadcast complete!\n\n📬 Sent to: {sent_count} users"
     if failed_count > 0:
         summary += f"\n❌ Failed: {failed_count} users"
-    
+
     await update.message.reply_text(summary)
     return ConversationHandler.END
 
@@ -708,106 +518,13 @@ async def cancel_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-# Update button_handler to include broadcast/reject
+# ---------------- INLINE BUTTONS ----------------
 @restricted
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    # Handle aunty broadcast
-    if query.data.startswith("broadcast_aunty_"):
-        if not is_admin(query.from_user.id):
-            await query.edit_message_text("❌ Only admin can broadcast.")
-            return
-        
-        report_id = query.data.replace("broadcast_aunty_", "")
-        if report_id not in pending_aunty_reports:
-            await query.edit_message_text("❌ Report not found.")
-            return
-        
-        report = pending_aunty_reports[report_id]
-        location = report["location"]
-        
-        # Get all registered users and broadcast
-        users = get_registered_users()
-        if not users:
-            await query.edit_message_text("⚠️ No registered users to broadcast to.")
-            return
-        
-        await query.edit_message_text("🚨 Sending alerts...", parse_mode="Markdown")
-        
-        broadcast_msg = f"🚨 *HALL AUNTY SPOTTED!* 🚨\n\n*Location: {location}*"
-        
-        # Send to all users
-        sent_count = 0
-        for user in users:
-            try:
-                await context.bot.send_message(
-                    chat_id=user[0],
-                    text=broadcast_msg,
-                    parse_mode="Markdown"
-                )
-                sent_count += 1
-            except Exception as e:
-                print(f"Failed to send to {user[0]}: {e}")
-        
-        # Clean up
-        del pending_aunty_reports[report_id]
-        
-        await query.edit_message_text(f"✅ Broadcast sent to {sent_count} users!", parse_mode="Markdown")
-        return
-    
-    # Handle aunty reject
-    if query.data.startswith("reject_aunty_"):
-        if not is_admin(query.from_user.id):
-            await query.edit_message_text("❌ Only admin can reject.")
-            return
-        
-        report_id = query.data.replace("reject_aunty_", "")
-        if report_id in pending_aunty_reports:
-            del pending_aunty_reports[report_id]
-        
-        await query.edit_message_text("❌ Report rejected.", parse_mode="Markdown")
-        return
-
-    # Handle canteen selections - show food options
-    if query.data in CANTEEN_MENUS:
-        canteen = CANTEEN_MENUS[query.data]
-        food_list = "\n".join([f"• {food}" for food in canteen["food"]])
-        message = f"{canteen['name']}\n\n📋 *Food Options:*\n{food_list}"
-        await query.edit_message_text(message, parse_mode="Markdown")
-        return
-
-    # Handle "Food Places Near Hall" - show canteen buttons
-    if query.data == "food_near_hall":
-        keyboard = [
-            [InlineKeyboardButton("🏫 Canteen 1", callback_data="canteen_1"), InlineKeyboardButton("🏫 Canteen 2", callback_data="canteen_2")],
-            [InlineKeyboardButton("🏫 Canteen 4", callback_data="canteen_4"), InlineKeyboardButton("☕ Crespion", callback_data="crespion")],
-            [InlineKeyboardButton("🍽️ South Spine", callback_data="south_spine")],
-        ]
-        await query.edit_message_text("🍽 Select a canteen to explore:", reply_markup=InlineKeyboardMarkup(keyboard))
-        return
-
-    # Handle other callbacks
-    responses = {
-        "supper_nearby": ("🍜 *Supper Spots Nearby:*\n\n"
-                         "• [Extension](https://maps.app.goo.gl/56sPvRMdJPujKLzb7)\n"
-                         "• [Nearby Prata Shop](https://maps.app.goo.gl/d3A4HLFudtiPQQKP6)"),
-        "supper_channels": ("🔗 *Supper Telegram Channels:*\n\n"
-                           "• [GigabiteNTU](https://t.me/GigabiteNTU)\n"
-                           "• [DingoNTU](https://t.me/dingontu)\n"
-                           "• [UrMomsCooking](https://t.me/urmomscooking)\n"
-                           "• [NomAtNTU](https://t.me/NomAtNTU)\n"
-                           "• [AnAcaiAffairXNTU](https://t.me/AnAcaiAffairXNTU)"),
-        "grab_options": ("🍔 *Popular GrabFood Options:*\n\n"
-                        "• McDonald's Jurong West\n"
-                        "• Bai Li Xiang\n"
-                        "• Kimly Dim Sum\n"
-                        "• Ah Long's Pancake\n"
-                        "• Western Food"),
-    }
-    
-    # Handle committee selections - send photos with info
+    # Committee -> photo
     if query.data in COMMITTEES:
         committee = COMMITTEES[query.data]
         await query.edit_message_text("Loading committee info...")
@@ -815,12 +532,56 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=query.message.chat_id,
             photo=committee["photo_url"],
             caption=committee["description"],
-            parse_mode="Markdown"
+            parse_mode="Markdown",
         )
         return
-    
+
+    # Food menus
+    if query.data in CANTEEN_MENUS:
+        canteen = CANTEEN_MENUS[query.data]
+        food_list = "\n".join([f"• {food}" for food in canteen["food"]])
+        message = f"{canteen['name']}\n\n📋 *Food Options:*\n{food_list}"
+        await query.edit_message_text(message, parse_mode="Markdown")
+        return
+
+    if query.data == "food_near_hall":
+        keyboard = [
+            [InlineKeyboardButton("🏫 Canteen 1", callback_data="canteen_1"),
+             InlineKeyboardButton("🏫 Canteen 2", callback_data="canteen_2")],
+            [InlineKeyboardButton("🏫 Canteen 4", callback_data="canteen_4"),
+             InlineKeyboardButton("☕ Crespion", callback_data="crespion")],
+            [InlineKeyboardButton("🍽️ South Spine", callback_data="south_spine")],
+        ]
+        await query.edit_message_text("🍽 Select a canteen to explore:", reply_markup=InlineKeyboardMarkup(keyboard))
+        return
+
+    responses = {
+        "supper_nearby": (
+            "🍜 *Supper Spots Nearby:*\n\n"
+            "• [Extension](https://maps.app.goo.gl/56sPvRMdJPujKLzb7)\n"
+            "• [Nearby Prata Shop](https://maps.app.goo.gl/d3A4HLFudtiPQQKP6)"
+        ),
+        "supper_channels": (
+            "🔗 *Supper Telegram Channels:*\n\n"
+            "• [GigabiteNTU](https://t.me/GigabiteNTU)\n"
+            "• [DingoNTU](https://t.me/dingontu)\n"
+            "• [UrMomsCooking](https://t.me/urmomscooking)\n"
+            "• [NomAtNTU](https://t.me/NomAtNTU)\n"
+            "• [AnAcaiAffairXNTU](https://t.me/AnAcaiAffairXNTU)"
+        ),
+        "grab_options": (
+            "🍔 *Popular GrabFood Options:*\n\n"
+            "• McDonald's Jurong West\n"
+            "• Bai Li Xiang\n"
+            "• Kimly Dim Sum\n"
+            "• Ah Long's Pancake\n"
+            "• Western Food"
+        ),
+    }
+
     if query.data in responses:
         await query.edit_message_text(responses[query.data], parse_mode="Markdown")
+
 
 # ---------------- MAIN ----------------
 def main():
@@ -830,17 +591,14 @@ def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.post_init = set_bot_commands
 
-    # basics
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
 
-    # food + inline
     app.add_handler(CommandHandler("food", food))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(CommandHandler("groups", groups))
     app.add_handler(CommandHandler("committees", show_committees))
 
-    # registration convo
     register_conv = ConversationHandler(
         entry_points=[CommandHandler("register", start_registration)],
         states={
@@ -852,7 +610,6 @@ def main():
     )
     app.add_handler(register_conv)
 
-    # admin users
     app.add_handler(CommandHandler("approve", approve))
     app.add_handler(CommandHandler("reject", reject))
     app.add_handler(CommandHandler("pending", pending))
@@ -860,7 +617,6 @@ def main():
     app.add_handler(CommandHandler("export", export))
     app.add_handler(CommandHandler("export_pending", export_pending))
 
-    # booking convo
     booking_conv = ConversationHandler(
         entry_points=[CommandHandler("book", start_booking)],
         states={
@@ -872,29 +628,22 @@ def main():
     )
     app.add_handler(booking_conv)
 
-    # booking admin
     app.add_handler(CommandHandler("booking_pending", booking_pending))
     app.add_handler(CommandHandler("booking_approve", booking_approve))
     app.add_handler(CommandHandler("booking_reject", booking_reject))
     app.add_handler(CommandHandler("daily_bookings", daily_bookings_cmd))
     app.add_handler(CommandHandler("all_daily_bookings", all_daily_bookings_cmd))
 
-    # enemy spotted convo
     enemy_spotted_conv = ConversationHandler(
         entry_points=[CommandHandler("enemyspotted", enemy_spotted)],
-        states={
-            ASK_AUNTY_LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, aunty_location_received)],
-        },
+        states={ASK_AUNTY_LOCATION: [MessageHandler(filters.TEXT & ~filters.COMMAND, aunty_location_received)]},
         fallbacks=[CommandHandler("cancel", cancel_enemy_spotted)],
     )
     app.add_handler(enemy_spotted_conv)
 
-    # broadcast message convo
     broadcast_conv = ConversationHandler(
         entry_points=[CommandHandler("broadcast", start_broadcast)],
-        states={
-            ASK_BROADCAST_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_broadcast)],
-        },
+        states={ASK_BROADCAST_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_broadcast)]},
         fallbacks=[CommandHandler("cancel", cancel_broadcast)],
     )
     app.add_handler(broadcast_conv)
