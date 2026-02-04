@@ -49,10 +49,19 @@ from booking import (
 # ---------------- ENV ----------------
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "1779704544"))
+
+# Support multiple admins - can be comma-separated IDs
+ADMIN_IDS_STR = os.getenv("ADMIN_IDS", "1779704544")
+ADMIN_IDS = set(int(id.strip()) for id in ADMIN_IDS_STR.split(","))
+ADMIN_ID = list(ADMIN_IDS)[0]  # For backward compatibility
 
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN environment variable is not set!")
+
+def is_admin(user_id: int) -> bool:
+    """Check if user is an admin"""
+    return user_id in ADMIN_IDS
+
 
 # ---------------- CONSTANTS ----------------
 EQUIPMENTS = [
@@ -98,7 +107,7 @@ def restricted(func):
         user_id = update.effective_user.id
 
         # Admin bypass
-        if user_id == ADMIN_ID:
+        if is_admin(user_id):
             return await func(update, context, *args, **kwargs)
 
         # pending check for nicer UX
@@ -218,7 +227,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @restricted
 async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ You are not authorized.")
         return
     try:
@@ -235,7 +244,7 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @restricted
 async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ You are not authorized.")
         return
     try:
@@ -250,7 +259,7 @@ async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @restricted
 async def pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ You are not authorized.")
         return
     users = get_pending_users()
@@ -265,7 +274,7 @@ async def pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @restricted
 async def remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ You are not authorized.")
         return
     try:
@@ -324,7 +333,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/enemyspotted` — Report Hall Aunty sighting\n"
         "`/cancel` — Cancel an ongoing process\n"
     )
-    if uid == ADMIN_ID:
+    if is_admin(uid):
         text += (
             "\n*🔑 Admin Commands:*\n\n"
             "*User Management:*\n"
@@ -481,7 +490,7 @@ async def cancel_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ---------------- BOOKING ADMIN ----------------
 async def booking_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ Not authorized.")
         return
 
@@ -497,7 +506,7 @@ async def booking_pending(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def booking_approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ Not authorized.")
         return
     try:
@@ -515,7 +524,7 @@ async def booking_approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def booking_reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ Not authorized.")
         return
     try:
@@ -533,7 +542,7 @@ async def booking_reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def daily_bookings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ Not authorized.")
         return
     bookings = get_daily_bookings()
@@ -547,7 +556,7 @@ async def daily_bookings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def all_daily_bookings_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_ID:
+    if not is_admin(update.effective_user.id):
         await update.message.reply_text("❌ Not authorized.")
         return
     bookings = get_all_daily_bookings()
@@ -612,7 +621,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Handle aunty broadcast
     if query.data.startswith("broadcast_aunty_"):
-        if query.from_user.id != ADMIN_ID:
+        if not is_admin(query.from_user.id):
             await query.edit_message_text("❌ Only admin can broadcast.")
             return
         
@@ -655,7 +664,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Handle aunty reject
     if query.data.startswith("reject_aunty_"):
-        if query.from_user.id != ADMIN_ID:
+        if not is_admin(query.from_user.id):
             await query.edit_message_text("❌ Only admin can reject.")
             return
         
