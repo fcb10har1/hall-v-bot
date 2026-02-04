@@ -358,23 +358,23 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 CANTEEN_MENUS = {
     "canteen_1": {
         "name": "🏫 Canteen 1",
-        "food": ["Chicken Rice", "Fried Noodles", "Laksa", "Roti Prata", "Vegetable Soup"],
+        "food": ["Japanese Curry Rice", "Mala", "Vietnamese Cusine", "Mixed Rice"],
     },
     "canteen_2": {
         "name": "🏫 Canteen 2",
-        "food": ["Fish & Chips", "Chicken Cutlet", "Fried Rice", "Mixed Vegetables", "Satay Skewers"],
+        "food": ["Western", "Abang Dol", "Chicken Rice", "Mini Wok", "Pasta", "Snail Noodles", "Japanese and Korean Stall", "Caifan"],
     },
     "canteen_4": {
         "name": "🏫 Canteen 4",
-        "food": ["Bee Hoon", "Chicken Wings", "Grilled Fish", "Stir Fried Greens", "Spring Rolls"],
+        "food": ["Hot Pot", "Chicken Rice", "Flapjack + waffle + Drink stall"],
     },
     "crespion": {
         "name": "☕ Crespion",
-        "food": ["Crepes (Sweet & Savoury)", "Coffee Drinks", "Pastries", "Smoothie Bowls", "Desserts"],
+        "food": ["Caifan", "Thai", "Dingo", "Ban Mian", "Fusion Bowl", "Indian Stall", "Mr Pasta", "Mala", "Tealer BBT", "Drink and Waffle store"], 
     },
     "south_spine": {
         "name": "🍽️ South Spine",
-        "food": ["International Cuisine", "Asian Fusion", "Vegetarian Options", "Burgers & Sandwiches", "Desserts & Beverages"],
+        "food": ["Ban Mian", "Chicken Rice", "Drink Stall", "Caifan", "La Mian/ Xiao Long Bao", "Mala", "Rice Noodle"],
     },
 }
 
