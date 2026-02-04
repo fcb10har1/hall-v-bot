@@ -75,6 +75,7 @@ EQUIPMENTS = [
 ASK_NAME, ASK_BLOCK, ASK_ROOM = range(3)
 ASK_EQUIP, ASK_DATE, ASK_DURATION = range(10, 13)
 ASK_AUNTY_LOCATION = 20
+ASK_BROADCAST_MESSAGE = 30
 
 # Temporary storage for pending aunty reports
 pending_aunty_reports = {}
@@ -145,6 +146,7 @@ async def set_bot_commands(application):
         BotCommand("enemyspotted", "Report Hall Aunty sighting"),
 
         # Admin
+        BotCommand("broadcast", "Admin: Broadcast message to all users"),
         BotCommand("pending", "Admin: View pending registrations"),
         BotCommand("approve", "Admin: Approve a pending user"),
         BotCommand("reject", "Admin: Reject a pending user"),
@@ -656,6 +658,56 @@ async def cancel_enemy_spotted(update: Update, context: ContextTypes.DEFAULT_TYP
     return ConversationHandler.END
 
 
+# ---------- BROADCAST MESSAGE --------
+@restricted
+async def start_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ You are not authorized.")
+        return ConversationHandler.END
+    
+    await update.message.reply_text("📢 Enter the message you want to broadcast to all users:")
+    return ASK_BROADCAST_MESSAGE
+
+
+async def send_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message_text = update.message.text
+    
+    # Get all registered users
+    users = get_registered_users()
+    if not users:
+        await update.message.reply_text("⚠️ No registered users to broadcast to.")
+        return ConversationHandler.END
+    
+    await update.message.reply_text(f"📢 Broadcasting message to {len(users)} users...")
+    
+    # Send to all users
+    sent_count = 0
+    failed_count = 0
+    for user in users:
+        try:
+            await context.bot.send_message(
+                chat_id=user[0],
+                text=message_text,
+                parse_mode="Markdown"
+            )
+            sent_count += 1
+        except Exception as e:
+            print(f"Failed to send to {user[0]}: {e}")
+            failed_count += 1
+    
+    summary = f"✅ Broadcast complete!\n\n📬 Sent to: {sent_count} users"
+    if failed_count > 0:
+        summary += f"\n❌ Failed: {failed_count} users"
+    
+    await update.message.reply_text(summary)
+    return ConversationHandler.END
+
+
+async def cancel_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Broadcast cancelled.")
+    return ConversationHandler.END
+
+
 # Update button_handler to include broadcast/reject
 @restricted
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -836,6 +888,16 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel_enemy_spotted)],
     )
     app.add_handler(enemy_spotted_conv)
+
+    # broadcast message convo
+    broadcast_conv = ConversationHandler(
+        entry_points=[CommandHandler("broadcast", start_broadcast)],
+        states={
+            ASK_BROADCAST_MESSAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_broadcast)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_broadcast)],
+    )
+    app.add_handler(broadcast_conv)
 
     app.run_polling(close_loop=False)
 
