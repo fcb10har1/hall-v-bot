@@ -378,6 +378,47 @@ CANTEEN_MENUS = {
     },
 }
 
+# Committee info with photos
+COMMITTEES = {
+    "JCRC": {
+        "description": "Hall Council\n\nThe heart of Hall V, Hall Council plans major events and initiatives to make hall life vibrant, inclusive, and unforgettable. They shape Hall V's culture and bring FiVers together as one big family.",
+        "photo_url": "https://drive.google.com/uc?export=view&id=1Ah45TyWq6cfQX6Y7-rEj-7IeW5SXKJJP"
+    },
+    "TYH": {
+        "description": "Twenty-One Young Hearts (TYH)\n\nTYH is Hall V's community service committee, dedicated to planning and executing meaningful local and overseas service projects. They foster a strong spirit of service, unity, and giving back among FiVers.",
+        "photo_url": "https://drive.google.com/uc?export=view&id=1aLkv-e3MrB56yEPoT9vCcuOJktUuAkQh"
+    },
+    "HAVOC": {
+        "description": "HAVOC (Hall Orientation Committee)\n\nHAVOC designs an exciting and welcoming orientation for incoming freshmen. Their goal is to help new FiVers feel at home, form strong friendships, and kick-start their Hall V journey with unforgettable memories.",
+        "photo_url": "https://drive.google.com/uc?export=view&id=1FSa71k0UL-twfddQuufl1Z-E1P4i_47D"
+    },
+    "HAPZ": {
+        "description": "HAPZ (Hall Anniversary Party Committee)\n\nHAPZ organises Hall V's milestone events, including Seniors' Farewell and Dinner & Dance. With portfolios spanning Media, Events, BizMag, Creative and Pageant, HAPZ works hard and celebrates harder.",
+        "photo_url": "https://drive.google.com/uc?export=view&id=135sgG29JZu-r9WQdNKkDff_8Jf5Peztz"
+    },
+    "Quindance": {
+        "description": "QuinDanze\n\nHall V's dance club that welcomes dancers of all backgrounds and styles. QuinDanze offers a supportive, family-like environment where passion for dance and lasting friendships take centre stage.",
+        "photo_url": "https://drive.google.com/uc?export=view&id=1qNjutTjEGNpougxl-DAgnHDhiPEGf5X-"
+    },
+    "Quinstical Productions": {
+        "description": "Quintsical Productions (QP)\n\nA creative family of filmmakers, writers, and actors, QP tells captivating stories through film and media. Whether you're experienced or new to production, there's a place for everyone to create and grow together.",
+        "photo_url": "https://drive.google.com/uc?export=view&id=1Ly9cRfUhWWajYrHZ_fpQ3bo3k746Lts7"
+    },
+    "Vikings": {
+        "description": "Vikings\n\nThe spirited cheerleading team of Hall V, founded in 2008. Vikings pride themselves on teamwork, passion, and perseverance, training hard to support Hall V with unwavering energy and heart.",
+        "photo_url": "https://via.placeholder.com/400x300?text=Vikings"
+    },
+    "Jamband": {
+        "description": "Jamband\n\nJamband brings music to life in Hall V through workshops, jam sessions, and live performances. They believe music connects people and are always ready to perform for hall, school, and public events.",
+        "photo_url": "https://drive.google.com/uc?export=view&id=1lpSij_B0fTYrbJ_jPw3ZrAkhECrKRtlC"
+    },
+    "SPOREC": {
+        "description": "SPOREC — Sports & Recreation committee bringing energy and excitement to Hall V with amazing sports and recreational events!",
+        "photo_url": "https://drive.google.com/uc?export=view&id=1hotBBzsWFm7marCS6Yp-7h_DfotSwy5X"
+    },
+}
+
+
 
 @restricted
 async def food(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -397,7 +438,7 @@ async def groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = (
         "*🏛️ HALL V GROUP CHATS TO JOIN!*\n\n"
         "*ANNOUNCEMENTS:*\n"
-        "[Announcements](https://t.me/)\n\n"
+        "[Announcements](https://t.me/+wNb72ZmYBPVlYjI1)\n\n"
         "*BLOCK CHATS:*\n"
         "💜 [Purple Block (Block 28)](https://t.me/+YLowJE5pAI4zYWNl)\n"
         "🧡 [Orange Block (Block 29)](https://t.me/+KcGB8uMeP8ZmZTE1)\n"
@@ -407,6 +448,7 @@ async def groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Join in to meet and have impromptu sports sessions with likeminded people!\n"
         "[Sports Fanatics](https://t.me/+urn2-hrYt-A2OWY1)\n\n"
         "*HALL V SPORTS:*\n"
+        "Join the exhilarating array of sports competitions and activities! Showcase your skills and represent Hall V!\n"
         "[Sports Activities](https://linktr.ee/HALLVSPORTS)\n\n"
         "*HALL V RECREATIONAL GAMES:*\n"
         "Discover ur hidden talents in the many rec games available!\n"
@@ -422,6 +464,7 @@ async def show_committees(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Quindance", callback_data="Quindance"),
          InlineKeyboardButton("Quinstical Productions", callback_data="Quinstical Productions")],
         [InlineKeyboardButton("Vikings", callback_data="Vikings"), InlineKeyboardButton("Jamband", callback_data="Jamband")],
+        [InlineKeyboardButton("SPOREC", callback_data="SPOREC")],
     ]
     await update.message.reply_text("Select a committee:", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -708,15 +751,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         "• McDonald's Jurong West\n"
                         "• Bai Li Xiang\n"
                         "• Kimly Dim Sum"),
-        "JCRC": "JCRC info...",
-        "TYH": "TYH info...",
-        "HAVOC": "HAVOC info...",
-        "HAPZ": "HAPZ info...",
-        "Quindance": "Quindance info...",
-        "Quinstical Productions": "Quinstical Productions info...",
-        "Vikings": "Vikings info...",
-        "Jamband": "Jamband info...",
     }
+    
+    # Handle committee selections - send photos with info
+    if query.data in COMMITTEES:
+        committee = COMMITTEES[query.data]
+        await query.edit_message_text("Loading committee info...")
+        await context.bot.send_photo(
+            chat_id=query.message.chat_id,
+            photo=committee["photo_url"],
+            caption=committee["description"],
+            parse_mode="Markdown"
+        )
+        return
+    
     if query.data in responses:
         await query.edit_message_text(responses[query.data], parse_mode="Markdown")
 
