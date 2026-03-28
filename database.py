@@ -55,6 +55,32 @@ def init_db():
                     );
                     """
                 )
+                c.execute(
+                    """
+                    UPDATE pending_users
+                    SET created_at = NOW()
+                    WHERE created_at IS NULL;
+                    """
+                )
+                c.execute(
+                    """
+                    ALTER TABLE pending_users
+                    ALTER COLUMN created_at SET DEFAULT NOW();
+                    """
+                )
+                c.execute(
+                    """
+                    UPDATE registered_users
+                    SET created_at = NOW()
+                    WHERE created_at IS NULL;
+                    """
+                )
+                c.execute(
+                    """
+                    ALTER TABLE registered_users
+                    ALTER COLUMN created_at SET DEFAULT NOW();
+                    """
+                )
             conn.commit()
     else:
         with get_db_connection() as conn:
@@ -89,20 +115,21 @@ def add_pending_user(user_id: int, name: str, block: str, room: str):
     Upserts user into pending_users.
     """
     if USE_POSTGRES:
+        created_at = datetime.utcnow()
         with get_db_connection() as conn:
             with conn.cursor() as c:
                 c.execute(
                     """
-                    INSERT INTO pending_users (user_id, name, block, room)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO pending_users (user_id, name, block, room, created_at)
+                    VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (user_id)
                     DO UPDATE SET
                         name = EXCLUDED.name,
                         block = EXCLUDED.block,
                         room = EXCLUDED.room,
-                        created_at = NOW();
+                        created_at = EXCLUDED.created_at;
                     """,
-                    (user_id, name, block, room),
+                    (user_id, name, block, room, created_at),
                 )
             conn.commit()
     else:
