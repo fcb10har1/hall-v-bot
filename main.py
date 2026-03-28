@@ -415,6 +415,17 @@ COMMITTEES = {
 for committee in COMMITTEES.values():
     committee["photo_url"] = committee["photo_url"].replace("export=view", "export=download")
 
+COMMITTEE_PHOTOS = {
+    "JCRC": os.path.join("assets", "committees", "jcrc.png"),
+    "TYH": os.path.join("assets", "committees", "tyh.jpg"),
+    "HAVOC": os.path.join("assets", "committees", "havoc.png"),
+    "HAPZ": os.path.join("assets", "committees", "hapz.png"),
+    "Quindance": os.path.join("assets", "committees", "quindance.png"),
+    "Quinstical Productions": os.path.join("assets", "committees", "quinstical_productions.png"),
+    "Jamband": os.path.join("assets", "committees", "jamband.png"),
+    "SPOREC": os.path.join("assets", "committees", "sporec.png"),
+}
+
 
 @restricted
 async def food(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -693,6 +704,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data in COMMITTEES:
         committee = COMMITTEES[query.data]
         await query.edit_message_text("Loading committee info...")
+        local_photo_path = COMMITTEE_PHOTOS.get(query.data)
+
+        if local_photo_path and os.path.exists(local_photo_path):
+            with open(local_photo_path, "rb") as photo_file:
+                await context.bot.send_photo(
+                    chat_id=query.message.chat_id,
+                    photo=photo_file,
+                    caption=committee["description"],
+                    parse_mode="Markdown",
+                )
+            return
+
         try:
             await context.bot.send_photo(
                 chat_id=query.message.chat_id,
@@ -703,7 +726,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
-                text=f"{committee['description']}\n\nPhoto link: {committee['photo_url']}",
+                text=committee["description"],
                 parse_mode="Markdown",
             )
         return
