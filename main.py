@@ -200,7 +200,12 @@ async def start_registration(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def ask_block(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["name"] = update.message.text.strip()
+    name = update.message.text.strip()
+    if not name:
+        await update.message.reply_text("❌ Name cannot be empty. Try again.")
+        return ASK_NAME
+    
+    context.user_data["name"] = name
     reply_keyboard = [["Purple", "Orange"], ["Green", "Blue"]]
     markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text("🏢 Which block are you from?", reply_markup=markup)
@@ -208,32 +213,47 @@ async def ask_block(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def ask_room(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["block"] = update.message.text.strip()
+    block = update.message.text.strip()
+    valid_blocks = ["Purple", "Orange", "Green", "Blue"]
+    
+    if block not in valid_blocks:
+        await update.message.reply_text(f"❌ Please select a valid block: {', '.join(valid_blocks)}")
+        return ASK_BLOCK
+    
+    context.user_data["block"] = block
     await update.message.reply_text("🏠 What's your room number? (e.g. 28-04-543)")
     return ASK_ROOM
 
 
 async def save_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    room = update.message.text.strip()
+    
+    if not room:
+        await update.message.reply_text("❌ Room number cannot be empty. Try again.")
+        return ASK_ROOM
+    
     name = context.user_data.get("name", "").strip()
     block = context.user_data.get("block", "").strip()
-    room = update.message.text.strip()
 
-    add_pending_user(user_id, name, block, room)
+    try:
+        add_pending_user(user_id, name, block, room)
+        await update.message.reply_text("✅ Registration request sent! Await admin approval.")
 
-    await update.message.reply_text("✅ Registration request sent! Await admin approval.")
-
-    await notify_admins(
-        context.bot,
-        (
-            f"🚨 *New registration request*\n"
-            f"Name: {name}\n"
-            f"Block: {block}\n"
-            f"Room: {room}\n"
-            f"User ID: `{user_id}`\n\n"
-            f"/approve {user_id}  or  /reject {user_id}"
-        ),
-    )
+        await notify_admins(
+            context.bot,
+            (
+                f"🚨 *New registration request*\n"
+                f"Name: {name}\n"
+                f"Block: {block}\n"
+                f"Room: {room}\n"
+                f"User ID: `{user_id}`\n\n"
+                f"/approve {user_id}  or  /reject {user_id}"
+            ),
+        )
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error saving registration: {str(e)}")
+    
     return ConversationHandler.END
 
 
