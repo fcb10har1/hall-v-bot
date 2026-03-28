@@ -416,14 +416,14 @@ for committee in COMMITTEES.values():
     committee["photo_url"] = committee["photo_url"].replace("export=view", "export=download")
 
 COMMITTEE_PHOTOS = {
-    "JCRC": os.path.join("assets", "committees", "jcrc.png"),
-    "TYH": os.path.join("assets", "committees", "tyh.jpg"),
-    "HAVOC": os.path.join("assets", "committees", "havoc.png"),
-    "HAPZ": os.path.join("assets", "committees", "hapz.png"),
-    "Quindance": os.path.join("assets", "committees", "quindance.png"),
-    "Quinstical Productions": os.path.join("assets", "committees", "quinstical_productions.png"),
-    "Jamband": os.path.join("assets", "committees", "jamband.png"),
-    "SPOREC": os.path.join("assets", "committees", "sporec.png"),
+    "JCRC": os.path.join("assets", "committees", "jcrc.jpg"),
+    "TYH": os.path.join("assets", "committees", "tyh_compressed.jpg"),
+    "HAVOC": os.path.join("assets", "committees", "havoc.jpg"),
+    "HAPZ": os.path.join("assets", "committees", "hapz.jpg"),
+    "Quindance": os.path.join("assets", "committees", "quindance.jpg"),
+    "Quinstical Productions": os.path.join("assets", "committees", "quinstical_productions.jpg"),
+    "Jamband": os.path.join("assets", "committees", "jamband.jpg"),
+    "SPOREC": os.path.join("assets", "committees", "sporec.jpg"),
 }
 
 
