@@ -84,6 +84,7 @@ ASK_NAME, ASK_BLOCK, ASK_ROOM = range(3)
 ASK_EQUIP, ASK_DATE, ASK_DURATION = range(10, 13)
 ASK_AUNTY_LOCATION = 20
 ASK_BROADCAST_MESSAGE = 30
+ASK_REJECTION_REASON = 40
 
 pending_aunty_reports = {}
 
@@ -613,6 +614,86 @@ async def all_daily_bookings_cmd(update: Update, context: ContextTypes.DEFAULT_T
         msg += f"{icon} ID {b[0]}: {b[2]} — {b[3]} ({b[4]}) [{b[5]}]\n"
     await update.message.reply_text(msg, parse_mode="Markdown")
 
+@restricted
+async def start_user_reject_with_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("You are not authorized.")
+        return ConversationHandler.END
+
+    try:
+        user_id = int(context.args[0])
+    except (IndexError, ValueError):
+        await update.message.reply_text("Usage: /reject <user_id>")
+        return ConversationHandler.END
+
+    context.user_data["pending_rejection"] = {"type": "registration", "target_id": user_id}
+    await update.message.reply_text(f"Please type the reason for rejecting user {user_id}.")
+    return ASK_REJECTION_REASON
+
+
+@restricted
+async def start_booking_reject_with_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("Not authorized.")
+        return ConversationHandler.END
+
+    try:
+        booking_id = int(context.args[0])
+    except (IndexError, ValueError):
+        await update.message.reply_text("Usage: /booking_reject <booking_id>")
+        return ConversationHandler.END
+
+    context.user_data["pending_rejection"] = {"type": "booking", "target_id": booking_id}
+    await update.message.reply_text(f"Please type the reason for rejecting booking {booking_id}.")
+    return ASK_REJECTION_REASON
+
+
+async def submit_rejection_reason(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    pending_rejection = context.user_data.get("pending_rejection")
+    if not pending_rejection:
+        await update.message.reply_text("No rejection is awaiting a reason.")
+        return ConversationHandler.END
+
+    reason = update.message.text.strip()
+    if not reason:
+        await update.message.reply_text("Reason cannot be empty. Please type the rejection reason.")
+        return ASK_REJECTION_REASON
+
+    rejection_type = pending_rejection["type"]
+    target_id = pending_rejection["target_id"]
+    context.user_data.pop("pending_rejection", None)
+
+    if rejection_type == "registration":
+        reject_user(target_id)
+        await update.message.reply_text(f"Rejected user {target_id}.\nReason: {reason}")
+        await context.bot.send_message(
+            chat_id=target_id,
+            text=f"Your registration was rejected.\nReason: {reason}",
+        )
+        return ConversationHandler.END
+
+    if rejection_type == "booking":
+        user_id = reject_booking_db(target_id)
+        if user_id:
+            await update.message.reply_text(f"Rejected booking {target_id}.\nReason: {reason}")
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"Your booking (ID {target_id}) was rejected.\nReason: {reason}",
+            )
+        else:
+            await update.message.reply_text("Booking not found or already processed.")
+        return ConversationHandler.END
+
+    await update.message.reply_text("Unknown rejection type.")
+    return ConversationHandler.END
+
+
+async def cancel_rejection(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.pop("pending_rejection", None)
+    await update.message.reply_text("Rejection cancelled.")
+    return ConversationHandler.END
+
+
 # ---------- ENEMY SPOTTED --------
 @restricted
 async def enemy_spotted(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -806,7 +887,6 @@ def main():
     app.add_handler(register_conv)
 
     app.add_handler(CommandHandler("approve", approve))
-    app.add_handler(CommandHandler("reject", reject))
     app.add_handler(CommandHandler("pending", pending))
     app.add_handler(CommandHandler("remove", remove))
     app.add_handler(CommandHandler("export", export))
@@ -823,9 +903,20 @@ def main():
     )
     app.add_handler(booking_conv)
 
+    rejection_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("reject", start_user_reject_with_reason),
+            CommandHandler("booking_reject", start_booking_reject_with_reason),
+        ],
+        states={
+            ASK_REJECTION_REASON: [MessageHandler(filters.TEXT & ~filters.COMMAND, submit_rejection_reason)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_rejection)],
+    )
+    app.add_handler(rejection_conv)
+
     app.add_handler(CommandHandler("booking_pending", booking_pending))
     app.add_handler(CommandHandler("booking_approve", booking_approve))
-    app.add_handler(CommandHandler("booking_reject", booking_reject))
     app.add_handler(CommandHandler("daily_bookings", daily_bookings_cmd))
     app.add_handler(CommandHandler("all_daily_bookings", all_daily_bookings_cmd))
 
