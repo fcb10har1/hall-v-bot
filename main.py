@@ -412,6 +412,9 @@ COMMITTEES = {
     "SPOREC": {"description": "SPOREC\n\nSports & recreation committee running games and sports events.", "photo_url": "https://drive.google.com/uc?export=view&id=1hotBBzsWFm7marCS6Yp-7h_DfotSwy5X"},
 }
 
+for committee in COMMITTEES.values():
+    committee["photo_url"] = committee["photo_url"].replace("export=view", "export=download")
+
 
 @restricted
 async def food(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -690,12 +693,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.data in COMMITTEES:
         committee = COMMITTEES[query.data]
         await query.edit_message_text("Loading committee info...")
-        await context.bot.send_photo(
-            chat_id=query.message.chat_id,
-            photo=committee["photo_url"],
-            caption=committee["description"],
-            parse_mode="Markdown",
-        )
+        try:
+            await context.bot.send_photo(
+                chat_id=query.message.chat_id,
+                photo=committee["photo_url"],
+                caption=committee["description"],
+                parse_mode="Markdown",
+            )
+        except Exception:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=f"{committee['description']}\n\nPhoto link: {committee['photo_url']}",
+                parse_mode="Markdown",
+            )
         return
 
     # Food menus
