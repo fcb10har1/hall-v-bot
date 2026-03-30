@@ -3,7 +3,10 @@ import sqlite3
 from datetime import datetime
 from typing import Any, List, Optional, Tuple
 
-import psycopg2
+try:
+    import psycopg2
+except ImportError:
+    psycopg2 = None
 
 # ---------------- Config ----------------
 DATABASE_URL = os.getenv("DATABASE_URL")  # set on Railway
@@ -20,6 +23,8 @@ def get_db_connection():
     - SQLite otherwise (local)
     """
     if USE_POSTGRES:
+        if psycopg2 is None:
+            raise RuntimeError("psycopg2 is required when DATABASE_URL is set.")
         # Railway hosted Postgres typically requires ssl
         return psycopg2.connect(DATABASE_URL, sslmode="require")
     return sqlite3.connect(DB_PATH)

@@ -1,24 +1,14 @@
-import os
-from datetime import datetime, date as dt_date
-from typing import List, Optional, Tuple
+from datetime import date as dt_date
+from typing import Optional
 
-import psycopg2
-from psycopg2.extras import RealDictCursor
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-
-
-def _get_conn():
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is not set. Add it in Railway Variables.")
-    # sslmode=require is needed on most hosted Postgres (incl. Railway)
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+from database import USE_POSTGRES, get_db_connection
 
 
 def init_booking_db():
     """Create bookings table if it doesn't exist."""
-    with _get_conn() as conn:
-        with conn.cursor() as c:
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        if USE_POSTGRES:
             c.execute(
                 """
                 CREATE TABLE IF NOT EXISTS bookings (
@@ -33,6 +23,21 @@ def init_booking_db():
                 );
                 """
             )
+        else:
+            c.execute(
+                """
+                CREATE TABLE IF NOT EXISTS bookings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    name TEXT,
+                    equipment TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    duration TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
+                """
+            )
         conn.commit()
 
 
@@ -41,8 +46,9 @@ def add_booking(user_id: int, name: str, equipment: str, date: str, duration: st
     date: 'YYYY-MM-DD' string
     returns booking id
     """
-    with _get_conn() as conn:
-        with conn.cursor() as c:
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        if USE_POSTGRES:
             c.execute(
                 """
                 INSERT INTO bookings (user_id, name, equipment, date, duration, status, created_at)
@@ -52,6 +58,15 @@ def add_booking(user_id: int, name: str, equipment: str, date: str, duration: st
                 (user_id, name, equipment, date, duration),
             )
             booking_id = c.fetchone()[0]
+        else:
+            c.execute(
+                """
+                INSERT INTO bookings (user_id, name, equipment, date, duration, status, created_at)
+                VALUES (?, ?, ?, ?, ?, 'pending', CURRENT_TIMESTAMP);
+                """,
+                (user_id, name, equipment, date, duration),
+            )
+            booking_id = c.lastrowid
         conn.commit()
         return int(booking_id)
 
@@ -61,8 +76,9 @@ def get_pending_bookings():
     Returns list of tuples matching your previous ordering:
     (id, user_id, name, equipment, date, duration, status, created_at)
     """
-    with _get_conn() as conn:
-        with conn.cursor() as c:
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        if USE_POSTGRES:
             c.execute(
                 """
                 SELECT id, user_id, name, equipment, date::text, duration, status, created_at::text
@@ -71,30 +87,50 @@ def get_pending_bookings():
                 ORDER BY created_at ASC;
                 """
             )
-            return c.fetchall()
+        else:
+            c.execute(
+                """
+                SELECT id, user_id, name, equipment, date, duration, status, created_at
+                FROM bookings
+                WHERE status = 'pending'
+                ORDER BY created_at ASC;
+                """
+            )
+        return c.fetchall()
 
 
 def approve_booking_db(booking_id: int) -> Optional[int]:
     """
     Approves only if pending. Returns user_id if success, else None.
     """
-    with _get_conn() as conn:
-        with conn.cursor() as c:
-            # lock the row to avoid race condition
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        if USE_POSTGRES:
             c.execute(
                 "SELECT user_id, status FROM bookings WHERE id=%s FOR UPDATE;",
                 (booking_id,),
             )
-            row = c.fetchone()
-            if not row:
-                return None
+        else:
+            c.execute(
+                "SELECT user_id, status FROM bookings WHERE id=?;",
+                (booking_id,),
+            )
+        row = c.fetchone()
+        if not row:
+            return None
 
-            user_id, status = row
-            if status != "pending":
-                return None
+        user_id, status = row
+        if status != "pending":
+            return None
 
+        if USE_POSTGRES:
             c.execute(
                 "UPDATE bookings SET status='approved' WHERE id=%s;",
+                (booking_id,),
+            )
+        else:
+            c.execute(
+                "UPDATE bookings SET status='approved' WHERE id=?;",
                 (booking_id,),
             )
         conn.commit()
@@ -105,22 +141,34 @@ def reject_booking_db(booking_id: int) -> Optional[int]:
     """
     Rejects only if pending. Returns user_id if success, else None.
     """
-    with _get_conn() as conn:
-        with conn.cursor() as c:
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        if USE_POSTGRES:
             c.execute(
                 "SELECT user_id, status FROM bookings WHERE id=%s FOR UPDATE;",
                 (booking_id,),
             )
-            row = c.fetchone()
-            if not row:
-                return None
+        else:
+            c.execute(
+                "SELECT user_id, status FROM bookings WHERE id=?;",
+                (booking_id,),
+            )
+        row = c.fetchone()
+        if not row:
+            return None
 
-            user_id, status = row
-            if status != "pending":
-                return None
+        user_id, status = row
+        if status != "pending":
+            return None
 
+        if USE_POSTGRES:
             c.execute(
                 "UPDATE bookings SET status='rejected' WHERE id=%s;",
+                (booking_id,),
+            )
+        else:
+            c.execute(
+                "UPDATE bookings SET status='rejected' WHERE id=?;",
                 (booking_id,),
             )
         conn.commit()
@@ -134,8 +182,9 @@ def get_daily_bookings():
     for today and approved.
     """
     today = dt_date.today().isoformat()
-    with _get_conn() as conn:
-        with conn.cursor() as c:
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        if USE_POSTGRES:
             c.execute(
                 """
                 SELECT id, user_id, name, equipment, duration, date::text
@@ -145,7 +194,17 @@ def get_daily_bookings():
                 """,
                 (today,),
             )
-            return c.fetchall()
+        else:
+            c.execute(
+                """
+                SELECT id, user_id, name, equipment, duration, date
+                FROM bookings
+                WHERE date = ? AND status='approved'
+                ORDER BY created_at ASC;
+                """,
+                (today,),
+            )
+        return c.fetchall()
 
 
 def get_all_daily_bookings():
@@ -155,8 +214,9 @@ def get_all_daily_bookings():
     for today (all statuses)
     """
     today = dt_date.today().isoformat()
-    with _get_conn() as conn:
-        with conn.cursor() as c:
+    with get_db_connection() as conn:
+        c = conn.cursor()
+        if USE_POSTGRES:
             c.execute(
                 """
                 SELECT id, user_id, name, equipment, duration, status, date::text
@@ -166,4 +226,14 @@ def get_all_daily_bookings():
                 """,
                 (today,),
             )
-            return c.fetchall()
+        else:
+            c.execute(
+                """
+                SELECT id, user_id, name, equipment, duration, status, date
+                FROM bookings
+                WHERE date = ?
+                ORDER BY created_at ASC;
+                """,
+                (today,),
+            )
+        return c.fetchall()

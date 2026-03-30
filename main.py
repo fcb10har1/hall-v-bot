@@ -71,6 +71,15 @@ async def notify_admins(bot, text: str, parse_mode: str = "Markdown"):
             pass
 
 
+async def notify_user_safely(bot, user_id: int, text: str) -> bool:
+    """Notify a user without breaking the admin workflow if Telegram rejects the send."""
+    try:
+        await bot.send_message(chat_id=user_id, text=text)
+        return True
+    except Exception:
+        return False
+
+
 # ---------------- CONSTANTS ----------------
 EQUIPMENTS = [
     "Basketball", "Football",
@@ -249,7 +258,8 @@ async def save_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Block: {block}\n"
                 f"Room: {room}\n"
                 f"User ID: `{user_id}`\n\n"
-                f"/approve {user_id}  or  /reject {user_id}"
+                f"`/approve {user_id}`\n"
+                f"`/reject {user_id}`"
             ),
         )
     except Exception as e:
@@ -274,8 +284,9 @@ async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Usage: /approve <user_id>")
         return
     if approve_user(user_id):
-        await update.message.reply_text(f"✅ Approved user {user_id}.")
-        await context.bot.send_message(chat_id=user_id, text="✅ You are now registered!")
+        user_notified = await notify_user_safely(context.bot, user_id, "✅ You are now registered!")
+        status_suffix = "" if user_notified else " User approved, but I couldn't DM them on Telegram."
+        await update.message.reply_text(f"✅ Approved user {user_id}.{status_suffix}")
     else:
         await update.message.reply_text("❌ User not found in pending list.")
 
@@ -291,8 +302,9 @@ async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Usage: /reject <user_id>")
         return
     reject_user(user_id)
-    await update.message.reply_text(f"❌ Rejected user {user_id}.")
-    await context.bot.send_message(chat_id=user_id, text="❌ Your registration was rejected.")
+    user_notified = await notify_user_safely(context.bot, user_id, "❌ Your registration was rejected.")
+    status_suffix = "" if user_notified else " User rejected, but I couldn't DM them on Telegram."
+    await update.message.reply_text(f"❌ Rejected user {user_id}.{status_suffix}")
 
 
 @restricted
@@ -516,8 +528,8 @@ async def confirm_booking(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Equipment: {equipment}\n"
             f"Date: {date}\n"
             f"Duration: {duration}\n\n"
-            f"/booking_approve {booking_id}\n"
-            f"/booking_reject {booking_id}"
+            f"`/booking_approve {booking_id}`\n"
+            f"`/booking_reject {booking_id}`"
         ),
     )
     return ConversationHandler.END
@@ -559,8 +571,13 @@ async def booking_approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = approve_booking_db(booking_id)
     if user_id:
-        await update.message.reply_text(f"✅ Approved booking {booking_id}.")
-        await context.bot.send_message(chat_id=user_id, text=f"✅ Your booking (ID {booking_id}) is approved.")
+        user_notified = await notify_user_safely(
+            context.bot,
+            user_id,
+            f"✅ Your booking (ID {booking_id}) is approved.",
+        )
+        status_suffix = "" if user_notified else " Booking approved, but I couldn't DM the user."
+        await update.message.reply_text(f"✅ Approved booking {booking_id}.{status_suffix}")
     else:
         await update.message.reply_text("❌ Booking not found or already processed.")
 
@@ -578,8 +595,13 @@ async def booking_reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user_id = reject_booking_db(booking_id)
     if user_id:
-        await update.message.reply_text(f"❌ Rejected booking {booking_id}.")
-        await context.bot.send_message(chat_id=user_id, text=f"❌ Your booking (ID {booking_id}) is rejected.")
+        user_notified = await notify_user_safely(
+            context.bot,
+            user_id,
+            f"❌ Your booking (ID {booking_id}) is rejected.",
+        )
+        status_suffix = "" if user_notified else " Booking rejected, but I couldn't DM the user."
+        await update.message.reply_text(f"❌ Rejected booking {booking_id}.{status_suffix}")
     else:
         await update.message.reply_text("❌ Booking not found or already processed.")
 
@@ -665,21 +687,25 @@ async def submit_rejection_reason(update: Update, context: ContextTypes.DEFAULT_
 
     if rejection_type == "registration":
         reject_user(target_id)
-        await update.message.reply_text(f"Rejected user {target_id}.\nReason: {reason}")
-        await context.bot.send_message(
-            chat_id=target_id,
-            text=f"Your registration was rejected.\nReason: {reason}",
+        user_notified = await notify_user_safely(
+            context.bot,
+            target_id,
+            f"Your registration was rejected.\nReason: {reason}",
         )
+        status_suffix = "" if user_notified else "\nUser was rejected, but I couldn't DM them on Telegram."
+        await update.message.reply_text(f"Rejected user {target_id}.\nReason: {reason}{status_suffix}")
         return ConversationHandler.END
 
     if rejection_type == "booking":
         user_id = reject_booking_db(target_id)
         if user_id:
-            await update.message.reply_text(f"Rejected booking {target_id}.\nReason: {reason}")
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"Your booking (ID {target_id}) was rejected.\nReason: {reason}",
+            user_notified = await notify_user_safely(
+                context.bot,
+                user_id,
+                f"Your booking (ID {target_id}) was rejected.\nReason: {reason}",
             )
+            status_suffix = "" if user_notified else "\nBooking was rejected, but I couldn't DM the user."
+            await update.message.reply_text(f"Rejected booking {target_id}.\nReason: {reason}{status_suffix}")
         else:
             await update.message.reply_text("Booking not found or already processed.")
         return ConversationHandler.END
